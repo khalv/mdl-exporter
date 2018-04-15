@@ -4,8 +4,8 @@ By Kalle Halvarsson
 
 ## Installation
 * Add mdl-exporter folder to a zip or rar file
-* In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File"
-* The option to export to .mdl will appear in the export menu. You may need to restart Blender first.
+* In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
+* The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
 
 ## Instructions
 This plugin tries to approximate the functionality of the Wc3 Art Tools exporter for 3ds Max. Due to inherent differences between the Blender and WC3 render pipelines, and my lack of knowledge in creating custom Blender GUI, some features are implemented in whatever ways would most closely match their Blender equivalent. The ambition has been to support multiple ways of achieving the same result, so that users can set up their scene in whatever way feels most intuitive. There are, however, some implementation details you might need to know before using this plugin.
