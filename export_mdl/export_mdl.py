@@ -2,7 +2,7 @@ import bpy
 import bmesh
 import itertools
 import math
-from mathutils import Vector
+from mathutils import Vector, Matrix
 from operator import itemgetter
 from collections import defaultdict
 
@@ -227,6 +227,9 @@ def get_curves(obj, data_path, indices):
         return curves
     return None
 
+def f2s(value):
+    return ('%.6f' % value).rstrip('0').rstrip('.')
+    
 def prepare_mesh(obj, context):
     # This applies all the modifiers (without altering the scene)
     mesh = obj.to_mesh(context.scene, apply_modifiers=True, settings='RENDER')
@@ -257,6 +260,13 @@ def calc_extents(vertices):
     
     return min_extents, max_extents
     
+def get_global_seq(fcurve):
+    for mod in fcurve.modifiers:
+        if mod.type == 'CYCLES':
+            return fcurce.range()[1]
+            
+    return -1
+    
     
 def get_parent(obj):
     parent = obj.parent
@@ -283,7 +293,10 @@ def get_parent(obj):
             
     return get_parent(parent)
     
-def save(operator, context, filepath="", mdl_version=800):
+def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
+
+    if global_matrix is None:
+        global_matrix = Matrix()
 
     geosets = {}
     materials = defaultdict(list)
@@ -291,7 +304,7 @@ def save(operator, context, filepath="", mdl_version=800):
     objects = defaultdict(set)
     geoset_anims = []
     geoset_anim_map = {}
-    global_seqs = []
+    global_seqs = set()
     textures = []
     helpers = []
     attachments = []
@@ -305,14 +318,33 @@ def save(operator, context, filepath="", mdl_version=800):
     
     # obj.show_double_sided
     
-    for obj in bpy.context.selected_objects:
+    objs = []
+    scene = context.scene
+    if use_selection:
+        objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
+    else:
+        objs = (obj for obj in scene.objects if obj.is_visible(scene))
+    
+    for obj in objs:
         parent = get_parent(obj)
         
         # Animations
         visibility = get_curve(obj, ['hide_render', 'hide_view', '["visibility"]'])
+        if visibility is not None and get_global_seq(visibility) > 0:
+            global_seqs.add(get_global_seq(visibility))
+            
         anim_loc = get_curves(obj, 'location', (0, 1, 2))
+        if anim_loc is not None and get_global_seq(anim_loc) > 0:
+            global_seqs.add(get_global_seq(anim_loc))
+            
         anim_rot = get_curves(obj, 'rotation_quaternion', (0, 1, 2, 3))
+        if anim_rot is not None and get_global_seq(anim_rot) > 0:
+            global_seqs.add(get_global_seq(anim_rot))
+            
         anim_scale = get_curves(obj, 'scale', (0, 1, 2))
+        if anim_scale is not None and get_global_seq(anim_scale) > 0:
+            global_seqs.add(get_global_seq(anim_scale))
+            
         is_animated = any((anim_loc, anim_rot, anim_scale))
         
         if get_curves(obj, 'rotation_euler', (0, 1, 2)) is not None:
@@ -323,7 +355,7 @@ def save(operator, context, filepath="", mdl_version=800):
             settings = obj.particle_systems[0].settings
         
             psys = Object(obj.name)
-            psys.pivot = obj.locaiton
+            psys.pivot = global_matrix * Vector(obj.location)
             psys.parent = parent
             psys.dimensions = (obj.dimensions[0], obj.dimensions[1])
             psys.lifetime = settings.lifetime/context.scene.render.fps
@@ -343,22 +375,23 @@ def save(operator, context, filepath="", mdl_version=800):
         elif obj.type == 'MESH' and obj.name.startswith('Collision'):
             collider = Object(obj.name)
             collider.parent = parent
-            collider.pivot = obj.location
+            collider.pivot = global_matrix * Vector(obj.location)
             
             if 'Box' in obj.name:
                 collider.type = 'Box'
-                collider.verts = []
+                min, max = calc_extents(obj.bound_box)
+                collider.verts = [min, max]
                 objects['collisionshape'].add(collider)
                 pass #TODO: Collision Box
             elif 'Sphere' in obj.name:
                 collider.type = 'Sphere'
-                collider.verts = [obj.location.co]
-                collider.radius = obj.dimensions[0]/2
+                collider.verts = [global_matrix * Vector(obj.location)]
+                collider.radius = sum(obj.dimensions)/6 # Average of all dimensions times half goes for radius
                 objects['collisionshape'].add(collider)
                 pass #TODO: Collision Sphere
         elif obj.type == 'MESH':
             mesh = prepare_mesh(obj, context)
-            mesh.transform(obj.matrix_world)
+            mesh.transform(global_matrix * obj.matrix_world)
             
             # Geoset Animation
             vertexcolor = get_curves(obj, 'color', (0, 1, 2))
@@ -378,7 +411,7 @@ def save(operator, context, filepath="", mdl_version=800):
                     bone.name = "Bone_"+obj.name
                 
                 bone.parent = parent # Remember to make it the parent - parent is added to matrices further down
-                bone.pivot = obj.location
+                bone.pivot = global_matrix * Vector(obj.location)
                 bone.anim_loc = anim_loc
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
@@ -391,7 +424,7 @@ def save(operator, context, filepath="", mdl_version=800):
                 mat = obj.material_slots[p.material_index].material
                 mat_index = p.material_index
                 
-                if mat:
+                if mat: # TODO: This should all be externalized into funcitons.
                     if mat.use_nodes:
                         for n in mat.node_tree.nodes:
                             if n.type == 'TEX_IMAGE':
@@ -406,13 +439,17 @@ def save(operator, context, filepath="", mdl_version=800):
                                 textures.append("Textures\white.blp")
                     else:
                         for slot in mat.texture_slots:
-                            if s and s.texture:
-                                if s.texture.type == 'IMAGE':
-                                    t = s.texture.image.name
+                            if slot and slot.texture:
+                                if slot.texture.type == 'IMAGE':
+                                    t = slot.texture.image.name
                                     if (t, n) not in materials[mat_index]:
                                         materials[mat_index].append((t, n))
                                     if t not in textures:
                                         textures.append(t)
+                        if not len(materials[mat_index]):
+                            materials[mat_index].append(("Textures\white.blp", None))
+                            if "Textures\white.blp" not in textures:
+                                textures.append("Textures\white.blp")
                 else: 
                     print("Material Index: %d" % mat_index)
                     if mat_index not in materials.keys():
@@ -433,11 +470,11 @@ def save(operator, context, filepath="", mdl_version=800):
                 vertexmap = {}
                 for vert, loop in zip(p.vertices, p.loop_indices):
                     co = mesh.vertices[vert].co
-                    coord = (round(co.x, 6), round(co.y, 6), round(co.z, 6))
+                    coord = (round(co.x, 5), round(co.y, 5), round(co.z, 5))
                     n = mesh.vertices[vert].normal if f.use_smooth else f.normal
-                    norm = (round(n.x, 6), round(n.y, 6), round(n.z, 6))
+                    norm = (round(n.x, 5), round(n.y, 5), round(n.z, 5))
                     uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
-                    tvert = (round(uv.x, 6), round(uv.y, 6))
+                    tvert = (round(uv.x, 5), round(uv.y, 5))
                     group = None
                     groupname = None
                     
@@ -490,14 +527,16 @@ def save(operator, context, filepath="", mdl_version=800):
         elif obj.type == 'EMPTY':
             if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
                 eventtrack = Object(obj.name)
-                eventtrack.pivot = obj.location
+                eventtrack.pivot = global_matrix * Vector(obj.location)
                 eventtrack.curve = get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
+                if eventtrack.curve is not None and get_global_seq(eventtrack.curve) > 0:
+                    global_seqs.add(get_global_seq(eventtrack.curve))
                 objects['eventtrack'].add(eventtrack)
                 # events.append({"object" : obj, "eventtrack" : eventtrack})
             elif obj.name.endswith(" Ref"):
                 # attachments.append({"object" : obj, "visibility" : visibility})
                 att = Object(obj.name)
-                att.pivot = obj.location
+                att.pivot = global_matrix * Vector(obj.location)
                 att.visibility = visibility
                 objects['attachment'].add(att)
             elif obj.name.startswith("Bone_") and is_animated:
@@ -506,21 +545,33 @@ def save(operator, context, filepath="", mdl_version=800):
             for b in obj.pose.bones:
                 bone = Object(b.name)
                 bone.parent = b.parent.name
-                bone.pivot = tuple(map(lambda x, y: x + y, b.head, obj.location)) # Bone location + armature location
+                bone.pivot = global_matrix * Vector(tuple(map(lambda x, y: x + y, b.head, obj.location))) # Bone location + armature location
                 datapath = 'pose.bones[\"'+b.name+'\"].'
                 bone.anim_loc = get_curves(obj, datapath + 'location', (0, 1, 2))
+                if bone.anim_loc is not None and get_global_seq(bone.anim_loc[0]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_loc[0]))
                 bone.anim_rot = get_curves(obj, datapath + 'rotation_quaternion', (0, 1, 2, 3))
+                if bone.anim_rot is not None and get_global_seq(bone.anim_rot[0]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_rot[0]))
                 bone.anim_scale = get_curves(obj, datapath + 'scale', (0, 1, 2))
+                if bone.anim_scale is not None and get_global_seq(bone.anim_scale[0]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_scale[0]))
                 objects['bone'].add(bone)
                 pass # First add to a temporary list and later cross-check against the bones of each geoset? Pick only animated bones?    
         elif obj.type == 'LAMP':
             light = Object(obj.name)
             light.object = obj
-            light.pivot = obj.location
+            light.pivot = global_matrix * Vector(obj.location)
             light.intensity = get_curve(obj, ['energy'])
+            if light.intensity is not None and get_global_seq(light.intensity) > 0:
+                global_seqs.add(get_global_seq(light.intensity))
             light.visibility = visibility
             light.range = get_curve(obj, ['distance'])
+            if light.range is not None and get_global_seq(light.range) > 0:
+                global_seqs.add(get_global_seq(light.intensity))
             light.color = get_curves(obj, 'color', (0, 1, 2))
+            if light.color is not None and get_global_seq(light.color[0]) > 0:
+                global_seqs.add(get_global_seq(light.color[0]))
             objects['light'].add(light)
             # lights.append({"object" : obj, "visibility" : visibility, "intensity" : intensity, "att_end" : range, "color" : color})
         elif obj.type == 'CAMERA':
@@ -553,6 +604,8 @@ def save(operator, context, filepath="", mdl_version=800):
     
     print(filepath)
     
+    #TODO: Add funciton for printing animation blocks
+    
     with open(filepath, 'w') as output:
         fw = output.write
         fw("Version {\n\tFormatVersion %d,\n}\n" % mdl_version)
@@ -584,6 +637,7 @@ def save(operator, context, filepath="", mdl_version=800):
             fw("\t}\n")
         fw("}\n")
         
+        global_seqs = sorted(global_seqs)
         if len(global_seqs):
             fw("GlobalSequences %d {\n" % len(global_seqs))
             for sequence in global_seqs:
@@ -668,6 +722,8 @@ def save(operator, context, filepath="", mdl_version=800):
                         fw("\tAlpha %d {\n" % len(alpha.keyframe_points))
                         interp = get_interp(alpha.keyframe_points[0].interpolation)
                         fw("\t\t%s,\n" % interp)
+                        if get_global_seq(alpha) > 0:
+                            fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(alpha)))
                         for keyframe in alpha.keyframe_points:
                             fw("\t\t%d: %d," % (f2ms * int(keyframe.co[0]), f2ms * int(keyframe.co[1])))
                         fw("}\n")
@@ -680,6 +736,8 @@ def save(operator, context, filepath="", mdl_version=800):
                         fw("\tColor %d {\n" % len(red.keyframe_points))
                         interp = get_interp(red.keyframe_points[0].interpolation)
                         fw("\t\t%s,\n" % interp)
+                        if get_global_seq(red) > 0:
+                            fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(red)))
                         for r, g, b in zip(red.keyframe_points, green.keyframe_points, blue.keyframe_points):
                             fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(r.co[0]), r.co[1], b.co[1], g.co[1]))
                         fw("\t}\n")
@@ -709,6 +767,8 @@ def save(operator, context, filepath="", mdl_version=800):
                     zcurve = bone.anim_loc[('location', 2)]
                     fw("\tTranslation %d {\n" % len(xcurve.keyframe_points))
                     interp = get_interp(xcurve.keyframe_points[0].interpolation)
+                    if get_global_seq(xcurve) > 0:
+                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
                     fw("\t\t%s,\n" % interp)
                     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
                         fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
@@ -721,6 +781,8 @@ def save(operator, context, filepath="", mdl_version=800):
                     wcurve = bone.anim_rot[('rotation_quaternion', 3)]
                     fw("\tRotation %d {\n" % len(xcurve.keyframe_points))
                     interp = get_interp(xcurve.keyframe_points[0].interpolation)
+                    if get_global_seq(xcurve) > 0:
+                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
                     fw("\t\t%s,\n" % interp)
                     for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
                         fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1], w.co[1])) #TODO: Support different interpolation types!
@@ -733,6 +795,8 @@ def save(operator, context, filepath="", mdl_version=800):
                     fw("\tScale %d {\n" % len(xcurve.keyframe_points))
                     interp = get_interp(xcurve.keyframe_points[0].interpolation)
                     fw("\t\t%s,\n" % interp)
+                    if get_global_seq(xcurve) > 0:
+                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
                     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
                         fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
                     fw("\t}\n")
@@ -756,12 +820,12 @@ def save(operator, context, filepath="", mdl_version=800):
                     fw("\tAmbient,\n")
                     isAmbient = True
                 fw("\tstatic AttenuationStart 0,\n")
-                fw("\tstatic AttenuationEnd %f,\n" % l.data.distance)
+                fw("\tstatic AttenuationEnd %f,\n" % l.data.distance) #TODO: Add animation support
                 if isAmbient:
-                    fw("\tstatic Color {%f, %f, %f},\n" % (1, 1, 1))
+                    fw("\tstatic Color {%f, %f, %f},\n" % (1, 1, 1)) # TODO: Add animation support
                     fw("\tstatic Intensity %f,\n" % 0)
                     fw("\tstatic AmbColor {%f, %f, %f},\n" % l.data.color[:])
-                    fw("\tstatic AmbIntensity %f,\n" % l.data.energy)
+                    fw("\tstatic AmbIntensity %f,\n" % l.data.energy) # TODO: Add animation support
                 else:
                     fw("\tstatic Color {%f, %f, %f},\n" % l.data.color[:])
                     fw("\tstatic Intensity %f,\n" % l.data.energy)
@@ -771,6 +835,8 @@ def save(operator, context, filepath="", mdl_version=800):
                 visibility = light.visibility
                 if visibility is not None:
                     fw("\tVisibility %d {\n\t\tDontInterp,\n" % len(visibility.keyframe_points))
+                    if get_global_seq(visibility) > 0:
+                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(visibility)))
                     for keyframe in visibility.keyframe_points:
                         fw("\t\t%d: %d," % (f2ms * int(keyframe.co[0]), f2ms * int(keyframe.co[1])))
                     fw("}\n")
@@ -785,6 +851,8 @@ def save(operator, context, filepath="", mdl_version=800):
                 visibility = attachment.visibility
                 if visibility is not None:
                     fw("\tVisibility %d {\n\t\tDontInterp,\n" % len(visibility.keyframe_points))
+                    if get_global_seq(visibility) > 0:
+                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(visibility)))
                     for keyframe in visibility.keyframe_points:
                         fw("\t\t%d: %d," % (f2ms * int(keyframe.co[0]), f2ms * int(keyframe.co[1])))
                     fw("}\n")
@@ -797,11 +865,13 @@ def save(operator, context, filepath="", mdl_version=800):
                 
             for camera in cameras:
                 fw("Camera \"%s\" {\n" % camera.name)
-                fw("\tPosition {%f, %f, %f},\n" % camera.location[:])
+                position = global_matrix * Vector(camera.location)
+                fw("\tPosition {%f, %f, %f},\n" % position[:])
                 fw("\tFieldOfView %f,\n" % camera.data.angle)
                 fw("\tFarClip %f,\n" % (camera.data.clip_end*10))
                 fw("\tNearClip %f,\n" % (camera.data.clip_start*10))
-                target = Vector(camera.location) + (camera.matrix_world.to_quaternion() * Vector((0.0, 0.0, -1.0)))
+                matrix = global_matrix * camera.matrix_world
+                target = position + matrix.to_quaternion() * Vector((0.0, 0.0, -1.0))
                 fw("\tTarget {\n\t\tPosition {%f, %f, %f},\n\t}\n" % (target.x, target.y, target.z))
                 fw("}\n")
                 
