@@ -700,7 +700,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t\t}\n")
             fw("\t}\n")
             
-            fw("\tGroups %d %d {\n" % (1, 1))                    
+            fw("\tGroups %d %d {\n" % len(geoset.matrices), len(geoset.matrices)) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
             for matrix in geoset.matrices:
                 fw("\t\tMatrices {%d},\n" % object_indices[matrix])
             fw("\t}\n")
