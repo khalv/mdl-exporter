@@ -9,7 +9,6 @@ from collections import defaultdict
 # -- Roadmap -- #
 # Properly support geoset anims
 # Particle systems
-# Collision shapes
 # Proper material export (supporting all material workflows)
 # ------------- #
 
@@ -133,7 +132,7 @@ def get_layers_recursive(node, mat):
     if node.bl_static_type == 'MIX_SHADER':
         for input in node.inputs:
             if input.link.from_node is not None:
-                layers += get_layers_recursive(input.link.from_node)
+                layers += get_layers_recursive(input.link.from_node, mat)
     elif node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
         unshaded = False
         texture = None
@@ -271,7 +270,6 @@ def get_global_seq(fcurve):
             
     return -1
     
-    
 def get_parent(obj):
     parent = obj.parent
    
@@ -296,6 +294,8 @@ def get_parent(obj):
             return "Bone_"+parent.name
             
     return get_parent(parent)
+	
+def write_anim(fw, curves)
     
 def print_anim_rot(anim, name, data_path, fw, global_seqs):
     xcurve = anim[(data_path, 0)]
@@ -775,7 +775,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t\t}\n")
             fw("\t}\n")
             
-            fw("\tGroups %d %d {\n" % (1, 1))                    
+            fw("\tGroups %d %d {\n" % len(geoset.matrices), len(geoset.matrices)) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
             for matrix in geoset.matrices:
                 fw("\t\tMatrices {%d},\n" % object_indices[matrix])
             fw("\t}\n")
@@ -928,3 +928,21 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     for keyframe in eventtrack.keyframe_points:
                         fw("\t\t%d,\n" % (f2ms * int(keyframe.co[0])))
                 fw("}\n")
+				
+			for collider in objects['collisionshape']:
+				fw("CollisionShape \"s\" {\n" % collider.name)
+                fw("\tObjectId %d,\n" % object_indices[collider.name])
+				if collider.parent is not None:
+                    fw("\tParent %d,\n" % object_indices[collider.parent])
+				if collider.type == 'Box':
+					fw("\tBox,\n")
+				else:
+					fw("\tSphere,\n")
+					
+				fw("\tVertices %d {\n" % len(collider.verts))
+				for vert in collider.verts:
+					fw("\t\t{%f, %f, %f},\n" % vert[:])
+				fw("\t}\n")
+				if collider.type == 'Sphere':
+					fw("\tBoundsRadius %f,\n" % collider.radius)
+				fw("}\n")
