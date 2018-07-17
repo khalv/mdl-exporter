@@ -15,7 +15,6 @@ from collections import defaultdict
 
 
 
-
 # -- Object types -- #
 # Bone
 # Light
@@ -71,6 +70,9 @@ class Geoset:
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.mat_index)
      
+def rnd(val):
+    return round(val, decimal_places)
+    
 def get_interp(interp):
     if interp == 'BEZIER':
         return 'Bezier'
@@ -260,10 +262,12 @@ def calc_extents(vertices):
     
     return min_extents, max_extents
     
+# Cycles modifier is used to create looping sequences
 def get_global_seq(fcurve):
-    for mod in fcurve.modifiers:
-        if mod.type == 'CYCLES':
-            return fcurce.range()[1]
+    if fcurve.modifiers:
+        for mod in fcurve.modifiers:
+            if mod.type == 'CYCLES':
+                return int(fcurve.range()[1] * f2ms)
             
     return -1
     
@@ -293,7 +297,69 @@ def get_parent(obj):
             
     return get_parent(parent)
     
+def print_anim_rot(anim, name, data_path, fw, global_seqs):
+    xcurve = anim[(data_path, 0)]
+    ycurve = anim[(data_path, 1)]
+    zcurve = anim[(data_path, 2)]
+    wcurve = anim[(data_path, 3)]
+    
+    fw("\t%s %d {\n" % (name, len(xcurve.keyframe_points)))
+
+    interp = get_interp(xcurve.keyframe_points[0].interpolation)
+    
+    if (interp == 'Bezier'):
+        fw("\t\tHermite,\n") # Rotations use hermite interpolation
+    else:
+        fw("\t\t%s,\n" % interp) # Interpolation mode 
+    
+    if get_global_seq(xcurve) > 0:
+        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
+       
+    for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
+        fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1]))) #TODO: Support different interpolation types!
+            
+        if interp == 'Bezier':
+            fw("\t\t\tInTan {%f, %f, %f, %f},\n" % (rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1]))) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
+            fw("\t\t\tOutTan {%f, %f, %f, %f},\n" % (rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1])))
+        else:
+            pass 
+    fw("\t}\n")
+    
+def print_anim(anim, name, data_path, fw, global_seqs):
+    xcurve = anim[(data_path, 0)]
+    ycurve = anim[(data_path, 1)]
+    zcurve = anim[(data_path, 2)]
+
+    fw("\t%s %d {\n" % (name, len(xcurve.keyframe_points)))
+    
+    interp = get_interp(xcurve.keyframe_points[0].interpolation)
+    
+    fw("\t\t%s,\n" % interp) # Interpolation mode 
+    
+    if get_global_seq(xcurve) > 0:
+        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
+       
+    for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
+        fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
+            
+        if interp == 'Bezier':
+            fw("\t\t\tInTan {%f, %f, %f},\n" % (rnd(x.handle_left[1]), rnd(y.handle_left[1]), rnd(z.handle_left[1])))
+            fw("\t\t\tOutTan {%f, %f, %f},\n" % (rnd(x.handle_right[1]), rnd(y.handle_right[1]), rnd(z.handle_right[1])))
+        else:
+            pass # Hermite interpolation not supported yet
+    fw("\t}\n")
+    
 def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
+
+    # -- Global constants -- #
+    global f2ms
+    global default_texture
+    global decimal_places
+    
+    f2ms = 1000 / context.scene.render.fps # Frame to milisecond conversion
+    default_texture = "Textures\white.blp"
+    decimal_places = 5
+    # ------------- #
 
     if global_matrix is None:
         global_matrix = Matrix()
@@ -313,8 +379,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     cameras = []
     
     filename = bpy.path.basename(context.blend_data.filepath)
-    
-    f2ms = 1000 / context.scene.render.fps
+   
     
     # obj.show_double_sided
     
@@ -334,16 +399,16 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             global_seqs.add(get_global_seq(visibility))
             
         anim_loc = get_curves(obj, 'location', (0, 1, 2))
-        if anim_loc is not None and get_global_seq(anim_loc) > 0:
-            global_seqs.add(get_global_seq(anim_loc))
+        if anim_loc is not None and get_global_seq(anim_loc[('location', 0)]) > 0:
+            global_seqs.add(get_global_seq(anim_loc[('location', 0)]))
             
         anim_rot = get_curves(obj, 'rotation_quaternion', (0, 1, 2, 3))
-        if anim_rot is not None and get_global_seq(anim_rot) > 0:
-            global_seqs.add(get_global_seq(anim_rot))
+        if anim_rot is not None and get_global_seq(anim_rot[('rotation_quaternion', 0)]) > 0:
+            global_seqs.add(get_global_seq(anim_rot[('rotation_quaternion', 0)]))
             
         anim_scale = get_curves(obj, 'scale', (0, 1, 2))
-        if anim_scale is not None and get_global_seq(anim_scale) > 0:
-            global_seqs.add(get_global_seq(anim_scale))
+        if anim_scale is not None and get_global_seq(anim_scale[('scale', 0)]) > 0:
+            global_seqs.add(get_global_seq(anim_scale[('scale', 0)]))
             
         is_animated = any((anim_loc, anim_rot, anim_scale))
         
@@ -382,13 +447,12 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 min, max = calc_extents(obj.bound_box)
                 collider.verts = [min, max]
                 objects['collisionshape'].add(collider)
-                pass #TODO: Collision Box
             elif 'Sphere' in obj.name:
                 collider.type = 'Sphere'
                 collider.verts = [global_matrix * Vector(obj.location)]
                 collider.radius = sum(obj.dimensions)/6 # Average of all dimensions times half goes for radius
                 objects['collisionshape'].add(collider)
-                pass #TODO: Collision Sphere
+
         elif obj.type == 'MESH':
             mesh = prepare_mesh(obj, context)
             mesh.transform(global_matrix * obj.matrix_world)
@@ -470,11 +534,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 vertexmap = {}
                 for vert, loop in zip(p.vertices, p.loop_indices):
                     co = mesh.vertices[vert].co
-                    coord = (round(co.x, 5), round(co.y, 5), round(co.z, 5))
+                    coord = (rnd(co.x), rnd(co.y), rnd(co.z))
                     n = mesh.vertices[vert].normal if f.use_smooth else f.normal
-                    norm = (round(n.x, 5), round(n.y, 5), round(n.z, 5))
+                    norm = (rnd(n.x), rnd(n.y), rnd(n.z))
                     uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
-                    tvert = (round(uv.x, 5), round(uv.y, 5))
+                    tvert = (rnd(uv.x), rnd(uv.y))
                     group = None
                     groupname = None
                     
@@ -648,19 +712,30 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         for texture in textures:
             fw("\tBitmap {\n")
             fw("\t\tImage \"%s\",\n" % texture)
+            # ReplaceableId <int>
             fw("\t\tWrapHeight,\n")
             fw("\t\tWrapWidth,\n")
             fw("\t}\n")
-            # WrapHeight, (inside Bitmap brackets)
         fw("}\n")
         
         fw("Materials %d {\n" % len(materials))
         for material in materials:
             fw("\tMaterial {\n")
+            # ConstantColor,
+            # SortPrimsFarZ,
+            # FullResolution,
+            # PriorityPlane <int>,
+            
             for (texture, node) in materials[material]:
                 fw("\t\tLayer {\n")
-                fw("\t\t\tFilterMode None,\n")
+                fw("\t\t\tFilterMode None,\n") # Transparent | BLend | Additive | AddAlpha | Modulate
+                # Unshaded, 
+                # TwoSided, 
+                # Unfogged,
+                # NoDepthTest,
+                # NoDepthSet,
                 fw("\t\t\tstatic TextureID %d,\n" % textures.index(texture))
+                # static Alpha (or anim),
                 fw("\t\t}\n")
             fw("\t}\n")
         fw("}\n")
@@ -725,28 +800,19 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                         if get_global_seq(alpha) > 0:
                             fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(alpha)))
                         for keyframe in alpha.keyframe_points:
-                            fw("\t\t%d: %d," % (f2ms * int(keyframe.co[0]), f2ms * int(keyframe.co[1])))
+                            fw("\t\t%d: %d," % (f2ms * int(keyframe.co[0]), keyframe.co[1]))
                         fw("}\n")
                     else: 
                         fw("\tstatic Alpha 1.0,\n")
                     if vertexcolor is not None:
-                        red = vertexcolor[('color', 0)]
-                        green = vertexcolor[('color', 1)]
-                        blue = vertexcolor[('color', 2)]
-                        fw("\tColor %d {\n" % len(red.keyframe_points))
-                        interp = get_interp(red.keyframe_points[0].interpolation)
-                        fw("\t\t%s,\n" % interp)
-                        if get_global_seq(red) > 0:
-                            fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(red)))
-                        for r, g, b in zip(red.keyframe_points, green.keyframe_points, blue.keyframe_points):
-                            fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(r.co[0]), r.co[1], b.co[1], g.co[1]))
-                        fw("\t}\n")
+                        print_anim(vertexcolor, 'Color', 'color', fw, global_seqs)
                     fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
                 fw("}\n")
             
             for bone in objects['bone']:
                 fw("Bone \"%s\" {\n" % bone.name)
-                fw("\tObjectId %d,\n" % object_indices[bone.name])
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[bone.name])
                 if bone.parent is not None:
                     fw("\tParent %d,\n" % object_indices[bone.parent])
                 
@@ -762,44 +828,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tGeosetAnimId None,\n")
                     
                 if bone.anim_loc is not None:
-                    xcurve = bone.anim_loc[('location', 0)]
-                    ycurve = bone.anim_loc[('location', 1)]
-                    zcurve = bone.anim_loc[('location', 2)]
-                    fw("\tTranslation %d {\n" % len(xcurve.keyframe_points))
-                    interp = get_interp(xcurve.keyframe_points[0].interpolation)
-                    if get_global_seq(xcurve) > 0:
-                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
-                    fw("\t\t%s,\n" % interp)
-                    for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
-                        fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
-                    fw("\t}\n")
+                    print_anim(bone.anim_loc, 'Translation', 'location', fw, global_seqs)
                     
                 if bone.anim_rot is not None:
-                    xcurve = bone.anim_rot[('rotation_quaternion', 0)]
-                    ycurve = bone.anim_rot[('rotation_quaternion', 1)]
-                    zcurve = bone.anim_rot[('rotation_quaternion', 2)]
-                    wcurve = bone.anim_rot[('rotation_quaternion', 3)]
-                    fw("\tRotation %d {\n" % len(xcurve.keyframe_points))
-                    interp = get_interp(xcurve.keyframe_points[0].interpolation)
-                    if get_global_seq(xcurve) > 0:
-                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
-                    fw("\t\t%s,\n" % interp)
-                    for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
-                        fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1], w.co[1])) #TODO: Support different interpolation types!
-                    fw("\t}\n")
+                    print_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs)
                     
                 if bone.anim_scale is not None:
-                    xcurve = bone.anim_scale[('scale', 0)]
-                    ycurve = bone.anim_scale[('scale', 1)]
-                    zcurve = bone.anim_scale[('scale', 2)]
-                    fw("\tScale %d {\n" % len(xcurve.keyframe_points))
-                    interp = get_interp(xcurve.keyframe_points[0].interpolation)
-                    fw("\t\t%s,\n" % interp)
-                    if get_global_seq(xcurve) > 0:
-                        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
-                    for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
-                        fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
-                    fw("\t}\n")
+                    print_anim(bone.anim_scale, 'Scale', 'scale', fw, global_seqs)
                     
                 # Visibility
                 fw("}\n")
@@ -807,7 +842,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for light in objects['light']:
                 l = light.object
                 fw("Light \"%s\" {\n" % light.name)
-                fw("\tObjectId %d,\n" % object_indices[light.name])
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[light.name])
+                    
                 if light.parent is not None:
                     fw("\tParent %d,\n" % object_indices[light.parent])
                     
@@ -842,9 +879,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("}\n")
                 fw("}\n")
                 
+                
+            # TODO: Helpers
+                
             for i, attachment in enumerate(objects['attachment']):
                 fw("Attachment \"%s\" {\n" % attachment.name)
-                fw("\tObjectId %d,\n" % object_indices[attachment.name])
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[attachment.name])
                 if attachment.parent is not None:
                     fw("\tParent %d,\n" % object_indices[attachment.parent])
                 fw("\tAttachmentID %d,\n" % i)
@@ -877,7 +918,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
             for event in objects['eventobject']:
                 fw("EventObject \"%s\" {\n" % event.name)
-                fw("\tObjectId %d,\n" % object_indices[event.name])
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[event.name])
                 if event.parent is not None:
                     fw("\tParent %d,\n" % object_indices[event.parent])
                 eventtrack = event.curve
