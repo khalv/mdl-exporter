@@ -295,8 +295,6 @@ def get_parent(obj):
             
     return get_parent(parent)
 	
-def write_anim(fw, curves)
-    
 def print_anim_rot(anim, name, data_path, fw, global_seqs):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
