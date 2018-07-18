@@ -131,7 +131,7 @@ def get_layers_recursive(node, mat):
     
     if node.bl_static_type == 'MIX_SHADER':
         for input in node.inputs:
-            if input.link.from_node is not None:
+            if input.link is not None and input.link.from_node is not None:
                 layers += get_layers_recursive(input.link.from_node, mat)
     elif node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
         unshaded = False
@@ -231,20 +231,28 @@ def get_curves(obj, data_path, indices):
 def f2s(value):
     return ('%.6f' % value).rstrip('0').rstrip('.')
     
-def prepare_mesh(obj, context):
-    # This applies all the modifiers (without altering the scene)
+def prepare_mesh(obj, context, matrix):
+    mod = None
+    if obj.data.use_auto_smooth:
+        mod = obj.modifiers.new("EdgeSplitExport", 'EDGE_SPLIT')
+        mod.split_angle = obj.data.auto_smooth_angle
+        # mod.use_edge_angle = True
+        
     mesh = obj.to_mesh(context.scene, apply_modifiers=True, settings='RENDER')
+    
+    if obj.data.use_auto_smooth:
+        obj.modifiers.remove(mod)
 
     # Triangulate for web export
     bm = bmesh.new()
     bm.from_mesh(mesh)
     bmesh.ops.triangulate(bm, faces=bm.faces)
-    # bmesh.ops.transform(bm, matrix=obj.matrix_world, verts=bm.verts)
+    bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
     bm.to_mesh(mesh)
     bm.free()
     del bm
 
-    mesh.calc_normals_split()
+    # mesh.calc_normals_split()
     mesh.calc_tessface()
 
     return mesh
@@ -294,7 +302,7 @@ def get_parent(obj):
             return "Bone_"+parent.name
             
     return get_parent(parent)
-	
+    
 def print_anim_rot(anim, name, data_path, fw, global_seqs):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
@@ -344,7 +352,7 @@ def print_anim(anim, name, data_path, fw, global_seqs):
             fw("\t\t\tInTan {%f, %f, %f},\n" % (rnd(x.handle_left[1]), rnd(y.handle_left[1]), rnd(z.handle_left[1])))
             fw("\t\t\tOutTan {%f, %f, %f},\n" % (rnd(x.handle_right[1]), rnd(y.handle_right[1]), rnd(z.handle_right[1])))
         else:
-            pass # Hermite interpolation not supported yet
+            pass # Hermite interpolation not supported by Blender. 
     fw("\t}\n")
     
 def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
@@ -452,8 +460,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 objects['collisionshape'].add(collider)
 
         elif obj.type == 'MESH':
-            mesh = prepare_mesh(obj, context)
-            mesh.transform(global_matrix * obj.matrix_world)
+            mesh = prepare_mesh(obj, context, global_matrix * obj.matrix_world)
+            # mesh.transform(global_matrix * obj.matrix_world)
             
             # Geoset Animation
             vertexcolor = get_curves(obj, 'color', (0, 1, 2))
@@ -773,7 +781,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t\t}\n")
             fw("\t}\n")
             
-            fw("\tGroups %d %d {\n" % len(geoset.matrices), len(geoset.matrices)) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
+            fw("\tGroups %d %d {\n" % (len(geoset.matrices), len(geoset.matrices))) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
             for matrix in geoset.matrices:
                 fw("\t\tMatrices {%d},\n" % object_indices[matrix])
             fw("\t}\n")
@@ -926,21 +934,21 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     for keyframe in eventtrack.keyframe_points:
                         fw("\t\t%d,\n" % (f2ms * int(keyframe.co[0])))
                 fw("}\n")
-				
-			for collider in objects['collisionshape']:
-				fw("CollisionShape \"s\" {\n" % collider.name)
+                
+            for collider in objects['collisionshape']:
+                fw("CollisionShape \"s\" {\n" % collider.name)
                 fw("\tObjectId %d,\n" % object_indices[collider.name])
-				if collider.parent is not None:
+                if collider.parent is not None:
                     fw("\tParent %d,\n" % object_indices[collider.parent])
-				if collider.type == 'Box':
-					fw("\tBox,\n")
-				else:
-					fw("\tSphere,\n")
-					
-				fw("\tVertices %d {\n" % len(collider.verts))
-				for vert in collider.verts:
-					fw("\t\t{%f, %f, %f},\n" % vert[:])
-				fw("\t}\n")
-				if collider.type == 'Sphere':
-					fw("\tBoundsRadius %f,\n" % collider.radius)
-				fw("}\n")
+                if collider.type == 'Box':
+                    fw("\tBox,\n")
+                else:
+                    fw("\tSphere,\n")
+                    
+                fw("\tVertices %d {\n" % len(collider.verts))
+                for vert in collider.verts:
+                    fw("\t\t{%f, %f, %f},\n" % vert[:])
+                fw("\t}\n")
+                if collider.type == 'Sphere':
+                    fw("\tBoundsRadius %f,\n" % collider.radius)
+                fw("}\n")
