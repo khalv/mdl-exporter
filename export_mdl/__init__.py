@@ -45,7 +45,7 @@ from bpy_extras.io_utils import (
         orientation_helper_factory,
         )
         
-IOMDLOrientationHelper = orientation_helper_factory("IOMDLOrientationHelper", axis_forward='-Y', axis_up='Z')  
+IOMDLOrientationHelper = orientation_helper_factory("IOMDLOrientationHelper", axis_forward='-X', axis_up='Z')  
   
 class MDLExporter(bpy.types.Operator, ExportHelper, IOMDLOrientationHelper):
     """MDL Exporter"""
@@ -55,7 +55,6 @@ class MDLExporter(bpy.types.Operator, ExportHelper, IOMDLOrientationHelper):
     filepath = bpy.props.StringProperty(subtype="FILE_PATH")
     filename_ext = ".mdl"
     filter_glob = StringProperty(default="*.mdl", options={'HIDDEN'})
-    
     
     use_selection = BoolProperty(
             name="Selected Objects",

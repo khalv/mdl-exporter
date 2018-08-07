@@ -2,7 +2,7 @@ import bpy
 import bmesh
 import itertools
 import math
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Quaternion
 from operator import itemgetter
 from collections import defaultdict
 
@@ -68,7 +68,50 @@ class Geoset:
     def __hash__(self):
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.mat_index)
-     
+        
+class MaterialLayer:
+    def __init__(self):
+        self.texture = default_texture
+        self.filter_mode = "None"
+        self.unshaded = False
+        self.two_sided = False
+        self.unfogged = False
+        self.texture_anim = None
+        self.alpha_anim = None
+        self.alpha_value = 1
+        self.no_depth_test = False
+        self.no_depth_set = False
+        
+    def __eq__(self, other):
+        if isinstance(self, other.__class__):
+            return self.__dict__ == other.__dict__
+        return NotImplemented
+        
+    def __ne__(self, other):
+        return not self.__eq__(other)
+        
+    def __hash__(self):
+        return hash(tuple(sorted(self.__dict__.items())))
+    
+class Material:
+    def __init__(self, index):
+        self.mat_index = index
+        self.layers = []
+        self.use_const_color = False
+        self.priority_plane = 0
+        
+    def __eq__(self, other):
+        if isinstance(self, other.__class__):
+            return self.mat_index == other.mat_index
+        return NotImplemented
+        
+    def __ne__(self, other):
+        return not self.__eq__(other)
+        
+    def __hash__(self):
+        # return hash(tuple(sorted(self.__dict__.items())))
+        return hash(self.mat_index)
+        
 def rnd(val):
     return round(val, decimal_places)
     
@@ -92,6 +135,17 @@ def get_sequences(scene):
         i += 2
         
     return sequences
+    
+def get_node_of_type(node, type):
+    for input in node.inputs:
+        link = None 
+        if len(input.links):
+            link = input.links[0]
+        if link is not None:
+            if link.from_node.bl_static_type == type:
+                return link.from_node
+            else:
+                return get_node_of_type(link.from_node, type)
 
 def get_texture_node(node):
     textures = []
@@ -111,10 +165,9 @@ def get_texture_node(node):
     else:
         return None
 
-def get_texture_anim(mat, uv_node):
-    animdata = mat.node_tree.animation_data
+def get_texture_anim(animdata, uv_node):
     anim = {}
-    if animdata and animdata.action:
+    if animdata.action:
         for tag in ('translation', 'rotation', 'scale'):
             for i in (0, 1, 2):
                 fcurve = animdata.action.fcurves.find('nodes[\"%s\"].%s' % (uv_node.name, tag), i)    
@@ -123,6 +176,7 @@ def get_texture_anim(mat, uv_node):
                 
     return anim if len(anim) else None
     
+# Not used, for future reference only
 def get_layers_recursive(node, mat):
     layers = []
     
@@ -134,80 +188,140 @@ def get_layers_recursive(node, mat):
             if input.link is not None and input.link.from_node is not None:
                 layers += get_layers_recursive(input.link.from_node, mat)
     elif node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
-        unshaded = False
-        texture = None
-        tex_anim = None
+        layer = MaterialLayer()
         link = node.inputs[0].links[0]
         if link is not None:
             tex_node = get_texture_node(link.from_node)
-            if tex_node is None:
-                texture = "Textures\white.blp"
-            else: 
-                texture = tex_node.image
+            if tex_node is not None:
+                layer.texture = tex_node.image
                 uv_node = tex_node.inputs[0].links[0]
                 if uv_node is not None:
                    if uv_node.from_node.bl_static_type == 'MAPPING':
-                       tex_anim = get_texture_anim(mat, uv_node)
-        if texture is not None: 
-            layers.append({"texture":texture, "unshaded":unshaded, "tex_anim":tex_anim})
+                       layer.texture_anim = get_texture_anim(mat, uv_node)
+                # Add the layer       
+                layers.append(layer)
     elif node.bl_static_type == 'ADD_SHADER':
-        unshaded = False
-        texture = None
-        tex_anim = None
+        layer = MaterialLayer()
+        tex_node = None
         for input in node.inputs:
             link = input.links[0]
             if link is not None:
                 if link.from_node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
                     tex_node = get_texture_node(link.from_node)
-                    if tex_node is None:
-                        texture = "Textures\white.blp"
-                    else: 
-                        texture = tex_node.image
+                    if tex_node is not None:
+                        layer.texture = tex_node.image
                         uv_node = tex_node.inputs[0].links[0]
                         if uv_node is not None:
                            if uv_node.from_node.bl_static_type == 'MAPPING':
-                               tex_anim = get_texture_anim(mat, uv_node)
+                               layer.texture_anim = get_texture_anim(mat.node_tree.animation_data, uv_node)
                             
                 elif link.from_node.bl_static_type == 'EMISSIVE':
-                    unshaded = True
-        if texture is not None:  
-            layers.append({"texture":texture, "unshaded":unshaded, "tex_anim":tex_anim})
+                    layer.unshaded = True
+        if tex_node is not None:  
+            layers.append(layer)
+            
+    return layers
+  
+def get_filter_mode(tag):
+    if tag == 'ADD':
+        return 'Additive'
+    elif tag == 'MIX':
+        return 'Blend'
+    elif tag == 'MULTIPLY':
+        return 'Modulate'
+    elif tag == 'SOFT_LIGHT' or tag == 'SCREEN':
+        return 'AddAlpha'
+    
+    return 'None'
+    
+def get_layers_cycles(node, anim_data):
+    layers = []
+    
+    if node is None:
+        return layers
+        
+    if node.bl_static_type == 'MIX_SHADER':
+        # Mix shader creates a layer split
+        for input in node.inputs:
+            if len(input.links):
+                layers += get_layers_cycles(input.links[0].from_node, anim_data)
+    elif node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT', 'BSDF_EMISSION'):
+        tex_node = get_node_of_type(node, 'TEX_IMAGE')
+        if tex_node is not None:
+            layer = MaterialLayer()
+            layer.texture = tex_node.image.name
+            
+            mapping_node = get_node_of_type(tex_node, 'MAPPING')
+            if (mapping_node is not None):
+                layer.texture_anim = get_texture_anim(anim_data, mapping_node)
+            
+            if node.bl_static_type == 'BSDF_EMISSION':
+                layer.unshaded = True
+
+            if node.bl_static_type == 'BSDF_TRANSPARENT':
+                layer.filter_mode = 'Transparent'
+                
+            layers.append(layer)
+    elif node.bl_static_type == 'ADD_SHADER':
+        pass
+    
     return layers
     
-def get_material(obj, mat):
-    if mat.use_nodes:
-        output = mat.node_tree.nodes.get("Material Output")
-        if output is not None:
-            # Cycles material
-            output.inputs[0]
-        else:
-            output = mat.node_tree.nodes.get("Output")
+def get_layers_bi(node, anim_data):
+    layers = []
+    
+    if node is None:
+        return layers
+    
+    return layers
+    
+def get_layers_from_slots(texture_slots):
+    layers = []
+    for slot in texture_slots:
+        if slot and slot.texture:
+            if slot.texture.type == 'IMAGE':
+                layer = MaterialLayer()
+                layer.texture = slot.texture.image.name
+                layer.filter_mode = get_filter_mode(slot.blend_type)
+                layer.alpha_value = 1 - slot.alpha_factor
+                if slot.emit_factor > 0 or slot.emission_factor > 0:
+                    layer.unshaded = True
+                    
+                layers.append(layer)
+                
+    return layers
+  
+def parse_materials(materials):
+    result = []
+    
+    for index, mat in materials.items():
+        material = Material(index)
+        
+        if mat.use_nodes:
+            output = mat.node_tree.nodes.get("Material Output")
+            animdata = mat.node_tree.animation_data
             if output is not None:
-                # Blender Internal material
-                pass
-                
-                
-                
-        for n in mat.node_tree.nodes:
-            if n.type == 'TEX_IMAGE':
-                t = n.image.name
-                if (t, n) not in materials[mat_index]:
-                    materials[mat_index].append((t, n))
-                if t not in textures:
-                    textures.append(t)
-        if not len(materials[mat_index]):
-            materials[mat_index].append(("Textures\white.blp", None))
-            if "Textures\white.blp" not in textures:
-                textures.append("Textures\white.blp")
-    else:
-        for slot in mat.texture_slots:
-            if s and s.texture:
-                if s.texture.type == 'IMAGE':
-                    t = s.texture.image.name
-                    if (t, n) not in materials[mat_index]:
-                        materials[mat_index].append((t, n))
-                    if t not in textures:
-                        textures.append(t)
+                # Cycles material
+                link = output.inputs[0].links[0]
+                if link is not None:
+                    material.layers = get_layers_cycles(link.from_node, animdata)
+            else:
+                output = mat.node_tree.nodes.get("Output")
+                if output is not None:
+                    # Blender Internal material
+                    link = output.inputs[0].links[0]
+                    if link is not None:
+                        material.layers = get_layers_bi(link.from_node, animdata)
+        
+        else: 
+            material.layers = get_layers_from_slots(mat.texture_slots)
+            
+        if not len(material.layers):
+            material.layers = [MaterialLayer()] # Default layer
+            
+        result.append(material)
+        
+    return result
     
 def get_curve(obj, data_paths):
     if obj.animation_data and obj.animation_data.action:
@@ -223,7 +337,7 @@ def get_curves(obj, data_path, indices):
         for index in indices:
             curve = obj.animation_data.action.fcurves.find(data_path, index)
             if curve is not None:
-                curves[(data_path, index)] = curve
+                curves[(data_path.split('.')[-1], index)] = curve # For now, i'm just interested in the type, not the whole data path. Hence, the split returns the name after the last dot. 
     if len(curves):
         return curves
     return None
@@ -246,6 +360,9 @@ def prepare_mesh(obj, context, matrix):
     # Triangulate for web export
     bm = bmesh.new()
     bm.from_mesh(mesh)
+    # If an object has had a negative scale applied, normals will be inverted. This will fix that. 
+    if any(s < 0 for s in obj.scale):
+        recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=bm.faces)
     bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
     bm.to_mesh(mesh)
@@ -290,7 +407,7 @@ def get_parent(obj):
     anim_loc = get_curves(obj, 'location', (1, 2, 3))
     anim_rot = get_curves(obj, 'rotation_quaternion', (1, 2, 3, 4))
     anim_scale = get_curves(obj, 'scale', (1, 2, 3))
-    animations = {anin_loc, anim_rot, anim_scale}
+    animations = {anim_loc, anim_rot, anim_scale}
     
     if not any(animations):
         return get_parent(parent)
@@ -303,7 +420,7 @@ def get_parent(obj):
             
     return get_parent(parent)
     
-def print_anim_rot(anim, name, data_path, fw, global_seqs):
+def write_anim_rot(anim, name, data_path, fw, global_seqs):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
     zcurve = anim[(data_path, 2)]
@@ -322,16 +439,17 @@ def print_anim_rot(anim, name, data_path, fw, global_seqs):
         fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
        
     for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
-        fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1]))) #TODO: Support different interpolation types!
+        rot = Quaternion((x.co[1], y.co[1], z.co[1], w.co[1]))
+        rot.normalize()
+        fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), rnd(rot.x), rnd(rot.y), rnd(rot.z), rnd(rot.w)))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan {%f, %f, %f, %f},\n" % (rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1]))) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
-            fw("\t\t\tOutTan {%f, %f, %f, %f},\n" % (rnd(x.co[1]), rnd(y.co[1]), rnd(z.co[1]), rnd(w.co[1])))
-        else:
-            pass 
+            fw("\t\t\tInTan {%f, %f, %f, %f},\n" % (rnd(x) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
+            fw("\t\t\tOutTan {%f, %f, %f, %f},\n" % (rnd(x) for x in rot))
+
     fw("\t}\n")
     
-def print_anim(anim, name, data_path, fw, global_seqs):
+def write_anim(anim, name, data_path, fw, global_seqs, bone_matrix):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
     zcurve = anim[(data_path, 2)]
@@ -346,11 +464,20 @@ def print_anim(anim, name, data_path, fw, global_seqs):
         fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
        
     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
-        fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), x.co[1], y.co[1], z.co[1]))
+        rot = bone_matrix.to_quaternion()
+        scale = bone_matrix.to_scale()
+        vec = Vector((x.co[1] * scale.x, y.co[1] * scale.y, z.co[1] * scale.z))
+        handle_l = Vector((x.handle_left[1] * scale.x, y.handle_left[1] * scale.y, z.handle_left[1] * scale.z))
+        handle_r = Vector((x.handle_right[1] * scale.x, y.handle_right[1] * scale.y, z.handle_right[1] * scale.z))
+        vec.rotate(rot)
+        handle_l.rotate(rot)
+        handle_r.rotate(rot)
+        
+        fw("\t\t%d: {%f, %f, %f},\n" % (f2ms * int(x.co[0]), rnd(vec.x), rnd(vec.y), rnd(vec.z)))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan {%f, %f, %f},\n" % (rnd(x.handle_left[1]), rnd(y.handle_left[1]), rnd(z.handle_left[1])))
-            fw("\t\t\tOutTan {%f, %f, %f},\n" % (rnd(x.handle_right[1]), rnd(y.handle_right[1]), rnd(z.handle_right[1])))
+            fw("\t\t\tInTan {%f, %f, %f},\n" % (rnd(handle_l.x), rnd(handle_l.y), rnd(handle_l.z)))
+            fw("\t\t\tOutTan {%f, %f, %f},\n" % (rnd(handle_r.x), rnd(handle_r.y), rnd(handle_r.z)))
         else:
             pass # Hermite interpolation not supported by Blender. 
     fw("\t}\n")
@@ -371,7 +498,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         global_matrix = Matrix()
 
     geosets = {}
-    materials = defaultdict(list)
+    materials = {}
     # bones = defaultdict(list)
     objects = defaultdict(set)
     geoset_anims = []
@@ -468,7 +595,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             mesh_geosets = []
             
-            
             armature = None
             for m in obj.modifiers:
                 if m.type == 'ARMATURE':
@@ -485,48 +611,19 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_loc = anim_loc
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
+                bone.matrix = global_matrix 
                 objects['bone'].add(bone)
                 parent = bone.name
             
             for f in mesh.tessfaces:
                 p = mesh.polygons[f.index]
                 # Textures and materials
-                mat = obj.material_slots[p.material_index].material
-                mat_index = p.material_index
-                
-                if mat: # TODO: This should all be externalized into funcitons.
-                    if mat.use_nodes:
-                        for n in mat.node_tree.nodes:
-                            if n.type == 'TEX_IMAGE':
-                                t = n.image.name
-                                if (t, n) not in materials[mat_index]:
-                                    materials[mat_index].append((t, n))
-                                if t not in textures:
-                                    textures.append(t)
-                        if not len(materials[mat_index]):
-                            materials[mat_index].append(("Textures\white.blp", None))
-                            if "Textures\white.blp" not in textures:
-                                textures.append("Textures\white.blp")
-                    else:
-                        for slot in mat.texture_slots:
-                            if slot and slot.texture:
-                                if slot.texture.type == 'IMAGE':
-                                    t = slot.texture.image.name
-                                    if (t, n) not in materials[mat_index]:
-                                        materials[mat_index].append((t, n))
-                                    if t not in textures:
-                                        textures.append(t)
-                        if not len(materials[mat_index]):
-                            materials[mat_index].append(("Textures\white.blp", None))
-                            if "Textures\white.blp" not in textures:
-                                textures.append("Textures\white.blp")
-                else: 
-                    print("Material Index: %d" % mat_index)
-                    if mat_index not in materials.keys():
-                        materials[mat_index].append(("Textures\white.blp", None))
-                        if "Textures\white.blp" not in textures:
-                            textures.append("Textures\white.blp")
-                            
+                mat_index = 0
+                if obj.material_slots and len(obj.material_slots):
+                    mat = obj.material_slots[p.material_index].material
+                    if mat is not None:
+                        mat_index = [mat for mat in bpy.data.materials].index(mat)
+                        materials[mat_index] = mat
                             
                 geoset = None
                 if mat_index in geosets.keys():
@@ -544,6 +641,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     n = mesh.vertices[vert].normal if f.use_smooth else f.normal
                     norm = (rnd(n.x), rnd(n.y), rnd(n.z))
                     uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
+                    uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
                     tvert = (rnd(uv.x), rnd(uv.y))
                     group = None
                     groupname = None
@@ -578,7 +676,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
                 if geoset not in mesh_geosets:
                     mesh_geosets.append(geoset)
-                
+            
+            # 
             for geoset in mesh_geosets:
                 geoset.objects.append(obj) 
                 geoset.min_extent, geoset.max_extent = calc_extents([x[0] for x in geoset.vertices])
@@ -614,20 +713,24 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         elif obj.type == 'ARMATURE':
             for b in obj.pose.bones:
                 bone = Object(b.name)
-                bone.parent = b.parent.name
-                bone.pivot = global_matrix * Vector(tuple(map(lambda x, y: x + y, b.head, obj.location))) # Bone location + armature location
-                datapath = 'pose.bones[\"'+b.name+'\"].'
-                bone.anim_loc = get_curves(obj, datapath + 'location', (0, 1, 2))
-                if bone.anim_loc is not None and get_global_seq(bone.anim_loc[0]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_loc[0]))
-                bone.anim_rot = get_curves(obj, datapath + 'rotation_quaternion', (0, 1, 2, 3))
-                if bone.anim_rot is not None and get_global_seq(bone.anim_rot[0]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_rot[0]))
-                bone.anim_scale = get_curves(obj, datapath + 'scale', (0, 1, 2))
-                if bone.anim_scale is not None and get_global_seq(bone.anim_scale[0]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_scale[0]))
+                if b.parent is not None:
+                    bone.parent = b.parent.name
+                bone.pivot = obj.matrix_world * Vector(b.bone.head_local) # Armature space to world space
+                bone.pivot = global_matrix * Vector(bone.pivot) # Axis conversion
+                datapath = 'pose.bones[\"'+b.name+'\"].%s'
+                bone.anim_loc = get_curves(obj, datapath % 'location', (0, 1, 2))
+                if bone.anim_loc is not None and get_global_seq(bone.anim_loc[('location', 0)]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_loc[('location', 0)]))
+                bone.anim_rot = get_curves(obj, datapath % 'rotation_quaternion', (0, 1, 2, 3))
+                if bone.anim_rot is not None and get_global_seq(bone.anim_rot[('rotation_quaternion', 0)]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_rot[('rotation_quaternion', 0)]))
+                bone.anim_scale = get_curves(obj, datapath % 'scale', (0, 1, 2))
+                if bone.anim_scale is not None and get_global_seq(bone.anim_scale[('scale', 0)]) > 0:
+                    global_seqs.add(get_global_seq(bone.anim_scale[('scale', 0)]))
+                
+                bone.matrix = global_matrix * obj.matrix_world * b.bone.matrix_local
                 objects['bone'].add(bone)
-                pass # First add to a temporary list and later cross-check against the bones of each geoset? Pick only animated bones?    
+                # First add to a temporary list and later cross-check against the bones of each geoset? Pick only animated bones?    
         elif obj.type == 'LAMP':
             light = Object(obj.name)
             light.object = obj
@@ -648,6 +751,10 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             cameras.append(obj)
             
     # objects = [*bones.keys(), *[l["object"] for l in lights], *[h["object"] for h in helpers], *[a["object"] for a in attachments], *[e["object"] for e in events]]
+    
+    mdl_materials = parse_materials(materials)
+    mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
+    textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
     
     sequences = get_sequences(context.scene)
     if len(sequences) == 0:
@@ -672,8 +779,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             vertices_all.append(vertex[0])
     global_extents_min, global_extents_max = calc_extents(vertices_all)
     
-    print(filepath)
-    
     #TODO: Add funciton for printing animation blocks
     
     with open(filepath, 'w') as output:
@@ -695,9 +800,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if len(helpers):
             fw("\tNumHelpers %d,\n" % len(helpers))
         fw("\tBlendTime %d,\n" % 150)
-        fw("\tMinimumExtent {%f, %f, %f},\n" % global_extents_min[:])
-        fw("\tMaximumExtent {%f, %f, %f},\n" % global_extents_max[:])
-        fw("\tBoundsRadius %f,\n" % calc_bounds_radius(global_extents_min, global_extents_max))
+        fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_min)))
+        fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_max)))
+        fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(global_extents_min, global_extents_max)))
         fw("}\n")
         
         fw("Sequences %d {\n" % len(sequences))
@@ -724,24 +829,49 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t}\n")
         fw("}\n")
         
-        fw("Materials %d {\n" % len(materials))
-        for material in materials:
+        fw("Materials %d {\n" % len(mdl_materials))
+        for material in mdl_materials:
             fw("\tMaterial {\n")
-            # ConstantColor,
+            
+            if material.use_const_color is True:
+                fw("\t\tConstantColor,\n")
+                
             # SortPrimsFarZ,
             # FullResolution,
-            # PriorityPlane <int>,
             
-            for (texture, node) in materials[material]:
+            fw("\t\tPriorityPlane %d,\n" % material.priority_plane)
+            
+            for layer in material.layers:
                 fw("\t\tLayer {\n")
-                fw("\t\t\tFilterMode None,\n") # Transparent | BLend | Additive | AddAlpha | Modulate
-                # Unshaded, 
-                # TwoSided, 
-                # Unfogged,
-                # NoDepthTest,
-                # NoDepthSet,
-                fw("\t\t\tstatic TextureID %d,\n" % textures.index(texture))
-                # static Alpha (or anim),
+                fw("\t\t\tFilterMode %s,\n" % layer.filter_mode)
+                if layer.unshaded is True:
+                    fw("\t\t\tUnshaded\n")
+                    
+                if layer.two_sided is True:
+                    fw("\t\t\tTwoSided,\n")
+                
+                if layer.unfogged is True:
+                    fw("\t\t\tUnfogged,\n")
+                    
+                if layer.texture_anim is not None:
+                    pass
+                    
+                if layer.no_depth_test:
+                    fw("\t\t\tNoDepthTest,\n")
+                    
+                if layer.no_depth_set:
+                    fw("\t\t\tNoDetphSet,\n")
+                    
+                if layer.texture is not None:
+                    fw("\t\t\tstatic TextureID %d,\n" % textures.index(layer.texture))    
+                else:
+                    fw("\t\t\tstatic TextureID 0,\n")  
+                    
+                if layer.alpha_anim is not None:
+                    pass
+                else:
+                    fw("\t\t\tstatic Alpha %s,\n" % f2s(layer.alpha_value))
+                    
                 fw("\t\t}\n")
             fw("\t}\n")
         fw("}\n")
@@ -752,18 +882,18 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             # Vertices
             fw("\tVertices %d {\n" % len(geoset.vertices))
             for vertex in geoset.vertices:
-                fw("\t\t{%f, %f, %f},\n" % vertex[0][:])
+                fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, vertex[0])))
             fw("\t}\n")
             # Normals
             fw("\tNormals %d {\n" % len(geoset.vertices))
             for normal in geoset.vertices:
-                fw("\t\t{%f, %f, %f},\n" % normal[1][:])
+                fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, normal[1])))
             fw("\t}\n")
             
             # TVertices
             fw("\tTVertices %d {\n" % len(geoset.vertices))
             for tvertex in geoset.vertices:
-                fw("\t\t{%f, %f},\n" % tvertex[2][:])
+                fw("\t\t{%s, %s},\n" % tuple(map(f2s, tvertex[2])))
             fw("\t}\n")
             
             # VertexGroups
@@ -786,9 +916,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\t\tMatrices {%d},\n" % object_indices[matrix])
             fw("\t}\n")
             
-            fw("\tMinimumExtent {%f, %f, %f},\n" % geoset.min_extent[:])
-            fw("\tMaximumExtent {%f, %f, %f},\n" % geoset.max_extent[:])
-            fw("\tBoundsRadius %f,\n" % calc_bounds_radius(geoset.min_extent, geoset.max_extent))
+            fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.min_extent)))
+            fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.max_extent)))
+            fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(geoset.min_extent, geoset.max_extent)))
             fw("\tMaterialID %d,\n" % i) # FIXME
             
             # Geoset end
@@ -811,7 +941,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     else: 
                         fw("\tstatic Alpha 1.0,\n")
                     if vertexcolor is not None:
-                        print_anim(vertexcolor, 'Color', 'color', fw, global_seqs)
+                        write_anim(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix())
                     fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
                 fw("}\n")
             
@@ -834,13 +964,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tGeosetAnimId None,\n")
                     
                 if bone.anim_loc is not None:
-                    print_anim(bone.anim_loc, 'Translation', 'location', fw, global_seqs)
+                    write_anim(bone.anim_loc, 'Translation', 'location', fw, global_seqs, bone.matrix)
                     
                 if bone.anim_rot is not None:
-                    print_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs)
+                    write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs)
                     
                 if bone.anim_scale is not None:
-                    print_anim(bone.anim_scale, 'Scale', 'scale', fw, global_seqs)
+                    write_anim(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
                     
                 # Visibility
                 fw("}\n")
@@ -863,15 +993,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tAmbient,\n")
                     isAmbient = True
                 fw("\tstatic AttenuationStart 0,\n")
-                fw("\tstatic AttenuationEnd %f,\n" % l.data.distance) #TODO: Add animation support
+                fw("\tstatic AttenuationEnd %s,\n" % f2s(l.data.distance)) #TODO: Add animation support
                 if isAmbient:
-                    fw("\tstatic Color {%f, %f, %f},\n" % (1, 1, 1)) # TODO: Add animation support
-                    fw("\tstatic Intensity %f,\n" % 0)
-                    fw("\tstatic AmbColor {%f, %f, %f},\n" % l.data.color[:])
-                    fw("\tstatic AmbIntensity %f,\n" % l.data.energy) # TODO: Add animation support
+                    fw("\tstatic Color {%s, %s, %s},\n" % ('1', '1', '1')) # TODO: Add animation support
+                    fw("\tstatic Intensity %s,\n" % '0')
+                    fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, l.data.color)))
+                    fw("\tstatic AmbIntensity %s,\n" % f2s(l.data.energy)) # TODO: Add animation support
                 else:
-                    fw("\tstatic Color {%f, %f, %f},\n" % l.data.color[:])
-                    fw("\tstatic Intensity %f,\n" % l.data.energy)
+                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, l.data.color)))
+                    fw("\tstatic Intensity %s,\n" % f2s(l.data.energy))
                     fw("\tstatic AmbColor {1, 1, 1},\n")
                     fw("\tstatic AmbIntensity 0,\n")
                     
@@ -907,7 +1037,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             fw("PivotPoints %d {\n" % len(objects_all))
             for object in objects_all:
-                fw("\t{%f, %f, %f},\n" % object.pivot[:])
+                fw("\t{%s, %s, %s},\n" % tuple(map(f2s, object.pivot)))
             fw("}\n")
                 
             for camera in cameras:
