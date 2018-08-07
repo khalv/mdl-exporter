@@ -47,7 +47,6 @@ Switch to Blender Render to get more alternatives for changing the properties of
 ## To-do list
 * Proper material export (supporting all workflows)
 * Particle systems
-* Omitting trailing zeroes for floating point numbers
 
 
 
