@@ -65,7 +65,7 @@ class MDLExporter(bpy.types.Operator, ExportHelper, IOMDLOrientationHelper):
     global_scale = FloatProperty(
             name="Scale",
             min=0.01, max=1000.0,
-            default=1.0,
+            default=60.0,
             )
     
     def execute(self, context):                                   

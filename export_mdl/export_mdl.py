@@ -281,21 +281,25 @@ def get_layers_from_slots(texture_slots):
         if slot and slot.texture:
             if slot.texture.type == 'IMAGE':
                 layer = MaterialLayer()
-                layer.texture = slot.texture.image.name
+                if slot.texture.image is not None:
+                    layer.texture = slot.texture.image.name
                 layer.filter_mode = get_filter_mode(slot.blend_type)
-                layer.alpha_value = 1 - slot.alpha_factor
-                if slot.emit_factor > 0 or slot.emission_factor > 0:
+                layer.alpha_value = slot.alpha_factor
+                if slot.use_map_emit (and slot.emit_factor > 0 or slot.emission_factor > 0):
                     layer.unshaded = True
                     
                 layers.append(layer)
                 
     return layers
   
-def parse_materials(materials):
+def parse_materials(materials, const_color_mats):
     result = []
     
     for index, mat in materials.items():
         material = Material(index)
+        
+        if index in const_color_mats:
+            material.use_const_color = True
         
         if mat.use_nodes:
             output = mat.node_tree.nodes.get("Material Output")
@@ -369,7 +373,7 @@ def prepare_mesh(obj, context, matrix):
     bm.free()
     del bm
 
-    # mesh.calc_normals_split()
+    mesh.calc_normals_split()
     mesh.calc_tessface()
 
     return mesh
@@ -420,7 +424,7 @@ def get_parent(obj):
             
     return get_parent(parent)
     
-def write_anim_rot(anim, name, data_path, fw, global_seqs):
+def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_matrix):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
     zcurve = anim[(data_path, 2)]
@@ -440,6 +444,7 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs):
        
     for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
         rot = Quaternion((x.co[1], y.co[1], z.co[1], w.co[1]))
+        rot = global_matrix.inverted().to_quaternion() * rot.inverted() * global_matrix.to_quaternion()
         rot.normalize()
         fw("\t\t%d: {%f, %f, %f, %f},\n" % (f2ms * int(x.co[0]), rnd(rot.x), rnd(rot.y), rnd(rot.z), rnd(rot.w)))
             
@@ -449,10 +454,11 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs):
 
     fw("\t}\n")
     
-def write_anim(anim, name, data_path, fw, global_seqs, bone_matrix):
-    xcurve = anim[(data_path, 0)]
-    ycurve = anim[(data_path, 1)]
-    zcurve = anim[(data_path, 2)]
+def write_anim(anim, name, data_path, fw, global_seqs, bone_matrix, order = (0, 1, 2)):
+    
+    xcurve = anim[(data_path, order[0])]
+    ycurve = anim[(data_path, order[1])]
+    zcurve = anim[(data_path, order[2])]
 
     fw("\t%s %d {\n" % (name, len(xcurve.keyframe_points)))
     
@@ -503,6 +509,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     objects = defaultdict(set)
     geoset_anims = []
     geoset_anim_map = {}
+    const_color_mats = set()
     global_seqs = set()
     textures = []
     helpers = []
@@ -611,7 +618,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_loc = anim_loc
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
-                bone.matrix = global_matrix 
+                bone.matrix = Matrix()
                 objects['bone'].add(bone)
                 parent = bone.name
             
@@ -685,11 +692,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     geoset.matrices.append(parent)
                 if any((vertexcolor, visibility)):
                     geoset_anim = {"color" : vertexcolor, "visibility" : visibility, "geoset" : geoset}
+                    if vertexcolor is not None:
+                        const_color_mats.add(geoset.mat_index)
                     if geoset_anim not in geoset_anims:
                         geoset_anims.append(geoset_anim)
                         
                     for bone in geoset.matrices:
                         geoset_anim_map[bone] = geoset_anim
+                        
+                    
                     
             
             bpy.data.meshes.remove(mesh)
@@ -728,7 +739,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 if bone.anim_scale is not None and get_global_seq(bone.anim_scale[('scale', 0)]) > 0:
                     global_seqs.add(get_global_seq(bone.anim_scale[('scale', 0)]))
                 
-                bone.matrix = global_matrix * obj.matrix_world * b.bone.matrix_local
+                bone.matrix = b.bone.matrix_local
                 objects['bone'].add(bone)
                 # First add to a temporary list and later cross-check against the bones of each geoset? Pick only animated bones?    
         elif obj.type == 'LAMP':
@@ -752,7 +763,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
     # objects = [*bones.keys(), *[l["object"] for l in lights], *[h["object"] for h in helpers], *[a["object"] for a in attachments], *[e["object"] for e in events]]
     
-    mdl_materials = parse_materials(materials)
+    mdl_materials = parse_materials(materials, const_color_mats)
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
     
@@ -845,7 +856,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\t\tLayer {\n")
                 fw("\t\t\tFilterMode %s,\n" % layer.filter_mode)
                 if layer.unshaded is True:
-                    fw("\t\t\tUnshaded\n")
+                    fw("\t\t\tUnshaded,\n")
                     
                 if layer.two_sided is True:
                     fw("\t\t\tTwoSided,\n")
@@ -941,7 +952,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     else: 
                         fw("\tstatic Alpha 1.0,\n")
                     if vertexcolor is not None:
-                        write_anim(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix())
+                        write_anim(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), (2, 1, 0))
                     fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
                 fw("}\n")
             
@@ -964,10 +975,10 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tGeosetAnimId None,\n")
                     
                 if bone.anim_loc is not None:
-                    write_anim(bone.anim_loc, 'Translation', 'location', fw, global_seqs, bone.matrix)
+                    write_anim(bone.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * bone.matrix)
                     
                 if bone.anim_rot is not None:
-                    write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs)
+                    write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
                     
                 if bone.anim_scale is not None:
                     write_anim(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
