@@ -94,6 +94,7 @@ class MaterialLayer:
 class Material:
     def __init__(self, index):
         self.mat_index = index
+        self.name = ""
         self.layers = []
         self.use_const_color = False
         self.priority_plane = 0
@@ -317,6 +318,7 @@ def parse_materials(materials, const_color_mats):
     
     for index, mat in materials.items():
         material = Material(index)
+        material.name = mat.name
         
         if index in const_color_mats:
             material.use_const_color = True
@@ -605,22 +607,22 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if len(obj.particle_systems):
             settings = obj.particle_systems[0].settings
         
-            psys = Object(obj.name)
-            psys.pivot = global_matrix * Vector(obj.location)
-            psys.parent = parent
-            psys.dimensions = (obj.dimensions[0], obj.dimensions[1])
-            psys.lifetime = settings.lifetime/context.scene.render.fps
-            psys.randomness = settings.factor_random
-            tail = settings.line_length_tail
-            rate = (settings.count * context.scene.render.fps) / (settings.frame_end - settings.frame_start)
-            
-            emittertype = settings.render_type
-            if emittertype == 'LINE':
-                pass
-            elif emittertype == 'OBJECT':
-                pass           
-            elif emittertype == 'BILLBOARD':
-                pass
+            if getattr(settings, "mdl_particle_sys"):
+                psys = Object(obj.name)
+                psys.emitter = settings.mdl_particle_sys
+                psys.pivot = global_matrix * Vector(obj.location)
+                
+                psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.dimensions)
+                psys.dimensions = global_matrix * psys.dimensions
+                psys.parent = parent
+                psys.visibility = visibility
+                
+                if psys.emitter.emitter_type == 'ParticleEmitter':
+                    objects['particle'].add(psys)
+                elif psys.emitter.emitter_type == 'ParticleEmitter2':
+                    objects['particle2'].add(psys)
+                else:
+                    objects['ribbon'].add(psys)
             
         # Meshes
         elif obj.type == 'MESH' and obj.name.startswith('Collision'):
@@ -814,6 +816,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     mdl_materials = parse_materials(materials, const_color_mats)
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
+
+    # We also need the textures used by emitters
+    for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
+        if psys.emitter.texture_path not in textures:
+            textures.append(psys.emitter.texture_path)
     
     sequences = get_sequences(context.scene)
     if len(sequences) == 0:
@@ -836,7 +843,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         index = index+1
         for vertex in geoset.vertices:
             vertices_all.append(vertex[0])
-    global_extents_min, global_extents_max = calc_extents(vertices_all)
+    
+    global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
     
     #TODO: Add funciton for printing animation blocks
     
@@ -1089,6 +1097,122 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for object in objects_all:
                 fw("\t{%s, %s, %s},\n" % tuple(map(f2s, object.pivot)))
             fw("}\n")
+            
+            for psys in objects['particle']:
+                emitter = psys.emitter
+                fw("ParticleEmitter \"%s\" {\n" % psys.name)
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[psys.name])
+                if psys.parent is not None:
+                    fw("\tParent %d,\n" % object_indices[psys.parent])
+                fw("\tEmitterUsesMDL,\n")
+                fw("\tEmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+                fw("\tGravity %s,\n" % f2s(rnd(emitter.gravity)))
+                fw("\tLongitude %s,\n" % f2s(rnd(emitter.longitude)))
+                fw("\tLatitude %s,\n" % f2s(rnd(emitter.latitude)))
+                visibility = psys.visibility
+                if visibility is not None:
+                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+                fw("\tParticle {\n")
+                fw("\t\tstatic LifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+                fw("\t\tstatic InitVelocity %s,\n" % f2s(rnd(emitter.speed)))
+                fw("\t\tPath \"%s\",\n" % emitter.model_path)
+                fw("\t}\n")
+                fw("}\n")
+                
+            for psys in objects['particle2']:
+                emitter = psys.emitter
+                fw("ParticleEmitter2 \"%s\" {\n" % psys.name)
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[psys.name])
+                if psys.parent is not None:
+                    fw("\tParent %d,\n" % object_indices[psys.parent])
+                    
+                if emitter.sort_far_z:
+                    fw("\tSortPrimsFarZ,\n")
+                    
+                if emitter.unshaded:
+                    fw("\tUnshaded,\n")
+                    
+                if emitter.line_emitter:
+                    fw("\tLineEmitter,\n")
+                
+                if emitter.unfogged:
+                    fw("\tUnfogged,\n")
+                    
+                if emitter.model_space:
+                    fw("\tModelSpace,\n")
+                    
+                if emitter.xy_quad:
+                    fw("\tXYQuad,\n")
+                    
+                fw("\tstatic Speed %s,\n" % f2s(rnd(emitter.speed)))
+                fw("\tstatic Variation %s,\n" % f2s(rnd(emitter.variation)))
+                fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
+                fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
+                visibility = psys.visibility
+                if visibility is not None:
+                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+                fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+                fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+                fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
+                fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
+                fw("\t%s,\n" % emitter.filter_mode)
+                fw("\tRows %d,\n" % emitter.rows)
+                fw("\tColumns %d,\n" % emitter.cols)
+                if emitter.head and emitter.tail:
+                    fw("\tBoth,\n")
+                elif emitter.tail:
+                    fw("\tTail,\n")
+                else:
+                    fw("\tHead,\n")
+                    
+                fw("\tTailLength %s,\n" % f2s(rnd(emitter.tail_length)))
+                fw("\tTime %s,\n" % f2s(rnd(emitter.time)))
+                fw("\tSegmentColor {\n")
+                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.start_color))))
+                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.mid_color))))
+                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.end_color))))
+                fw("\t},\n")
+                alpha = (emitter.start_alpha, emitter.mid_alpha, emitter.end_alpha)
+                fw("\tAlpha {%s, %s, %s},\n" % tuple(map(f2s, alpha)))
+                particle_scales = (emitter.start_scale, emitter.mid_scale, emitter.end_scale)
+                fw("\tParticleScaling {%s, %s, %s},\n" % tuple(map(f2s, particle_scales)))
+                fw("\tLifeSpanUVAnim {%d, %d, %d},\n" % (emitter.head_life_start, emitter.head_life_end, emitter.head_life_repeat))
+                fw("\tDecayUVAnim {%d, %d, %d},\n" % (emitter.head_decay_start, emitter.head_decay_end, emitter.head_decay_repeat))
+                fw("\tTailUVAnim {%d, %d, %d},\n" % (emitter.tail_life_start, emitter.tail_life_end, emitter.tail_life_repeat))
+                fw("\tTailDecayUVAnim {%d, %d, %d},\n" % (emitter.tail_decay_start, emitter.tail_decay_end, emitter.tail_decay_repeat))
+                fw("\tTextureID %d,\n" % textures.index(emitter.texture_path))
+                if emitter.priority_plane != 0:
+                    fw("\tPriorityPlane %d,\n" % emitter.priority_plane)
+                fw("}\n")
+                
+            for psys in objects['ribbon']:
+                emitter = psys.emitter
+                fw("RibbonEmitter \"%s\" {\n" % psys.name)
+                if len(object_indices) > 1:
+                    fw("\tObjectId %d,\n" % object_indices[psys.name])
+                if psys.parent is not None:
+                    fw("\tParent %d,\n" % object_indices[psys.parent])
+                    
+                fw("\tstatic HeightAbove %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
+                fw("\tstatic HeightBelow %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
+                fw("\tstatic Alpha %s,\n")
+                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
+                fw("\tstatic TextureSlot %d,\n" % textures.index(emitter.texture_path))
+                visibility = psys.visibility
+                if visibility is not None:
+                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+                fw("\tEmissionRate %d,\n" % emitter.emission_rate)
+                fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+                fw("\tGravity %s,\n" % f2s(rnd(emitter.gravity)))
+                fw("\tRows %d,\n" % emitter.rows)
+                fw("\tColumns %d,\n" % emitter.cols)
+                for material in mdl_materials:
+                    if material.name == emitter.ribbon_material.name:
+                        fw("\tMaterialID %d,\n" % mdl_materials.index(material))
+                        break
+                fw("}\n")
                 
             for camera in cameras:
                 fw("Camera \"%s\" {\n" % camera.name)

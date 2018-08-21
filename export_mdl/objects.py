@@ -131,7 +131,7 @@ class EventPropertyGroup(bpy.types.PropertyGroup):
         
 class CUSTOM_OT_create_eventobject(bpy.types.Operator):
     bl_idname = "object.create_eventobject"
-    bl_label = "Create MDL Event Object"
+    bl_label = "Add MDL Event Object"
 
     name_counter = 0
     
@@ -157,7 +157,7 @@ class CUSTOM_OT_create_eventobject(bpy.types.Operator):
     
 class CUSTOM_OT_create_colshape(bpy.types.Operator):
     bl_idname = "object.create_collision_shape"
-    bl_label = "Create MDL Collision Shape"
+    bl_label = "Add MDL Collision Shape"
     
     action = bpy.props.EnumProperty(
             items = [('Sphere', "Collision Sphere", ""),
