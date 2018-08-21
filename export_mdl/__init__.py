@@ -22,21 +22,26 @@ bl_info = {
     "blender": (2, 79, 0),
     "location": "File > Export > Warcraft MDL (.mdl)",
     "description": "Export mesh as Warcraft .MDL",
-    "category": "Import-Export"}
-    
-if "bpy" in locals():
-    import importlib
-    if "export_mdl" in locals():
-        importlib.reload(export_mdl)
-        
-import bpy    
+    "category": "Import-Export"} 
 
+
+if "bpy" in locals():
+  import imp
+  imp.reload(materials)
+  imp.reload(objects)
+  imp.reload(export_mdl)
+else:
+  from . import materials, objects, export_mdl
+
+import bpy  
+  
 from bpy.props import (
         CollectionProperty,
         StringProperty,
         BoolProperty,
         EnumProperty,
         FloatProperty,
+        IntProperty
         )
 from bpy_extras.io_utils import (
         ImportHelper,
@@ -103,22 +108,21 @@ class MDLExporter(bpy.types.Operator, ExportHelper, IOMDLOrientationHelper):
     @classmethod
     def poll(cls, context):
         return context.active_object != None
-                                            
-    #def draw(self, context):
-    #    layout = self.layout
 
-    #    row = layout.row()
-    #    row.prop(self, "use_mesh_modifiers")
         
 def menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
     self.layout.operator(MDLExporter.bl_idname,text="Warcraft MDL (.mdl)")  
 
 def register():
+    bpy.utils.register_class(materials.MaterialLayerSettings)
+    bpy.utils.register_class(objects.EventPropertyGroup)
     bpy.utils.register_module(__name__);
     bpy.types.INFO_MT_file_export.append(menu_func)
     
 def unregister():
+    bpy.utils.unregister_class(materials.MaterialLayerSettings)
+    bpy.utils.unregister_class(objects.EventPropertyGroup)
     bpy.utils.unregister_module(__name__);
     bpy.types.INFO_MT_file_export.remove(menu_func)
     
