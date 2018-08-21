@@ -613,7 +613,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 psys.pivot = global_matrix * Vector(obj.location)
                 
                 psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.dimensions)
-                psys.dimensions = global_matrix * psys.dimensions
+                psys.dimensions = Vector(map(abs, global_matrix * psys.dimensions))
                 psys.parent = parent
                 psys.visibility = visibility
                 
@@ -622,6 +622,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 elif psys.emitter.emitter_type == 'ParticleEmitter2':
                     objects['particle2'].add(psys)
                 else:
+                    # Add the material to the list, in case it's unused
+                    mat = psys.emitter.ribbon_material
+                    mat_index = [mat for mat in bpy.data.materials].index(mat)
+                    materials[mat_index] = mat
+                    
                     objects['ribbon'].add(psys)
             
         # Meshes
@@ -843,6 +848,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         index = index+1
         for vertex in geoset.vertices:
             vertices_all.append(vertex[0])
+     
+    # Account for particle systems when calculating bounds 
+    for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
+        vertices_all.append(tuple(x + y/2 for x, y in zip(psys.pivot, psys.dimensions)))
+        vertices_all.append(tuple(x - y/2 for x, y in zip(psys.pivot, psys.dimensions)))
     
     global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
     
