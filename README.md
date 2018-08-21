@@ -55,5 +55,6 @@ Switch to Blender Render to get more alternatives for changing the properties of
 ### Particle Systems
 The exporter has a custom editor for configuring particle systems. The data piggybacks on the Blender ParticleSystemSettings data block, so you need to create a particle system to make the MDL particle editor appear. This also allows for shared particle data among emitters - just remember to make it single-user first if you copy one so that you don't overwrite your old data. I've chosen to name the emitters "Model Emitter", and "Particle Emitter" rather than "ParticleEmitter" and "ParticleEmitter2", since it's more descriptive of what they do. Ribbons are also supported. The bounds of whatever object the particle system is attached to defines the width and height of the emitter. 
 
+![Particle Editor](https://github.com/khalv/mdl-exporter/blob/master/images/Particle%20Editor.jpg)
 
 
