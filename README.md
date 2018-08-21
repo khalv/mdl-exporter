@@ -13,7 +13,7 @@ This plugin tries to approximate the functionality of the Wc3 Art Tools exporter
 ### Materials
 This exporter comes with a custom material editor which will attach extra MDL properties to the materials in your file. A material consists of multiple material layers, which will be rendered from top to bottom, and blended together using the specified filter mode. Some filter modes support an additional alpha multiplier, which can be animated. To add a texture animation, create a mapping node in the node graph with the same name as your layer, and animate its properties (will be implemented soon).  
 
-![Material Editor](https://github.com/khalv/mdl-exporter/blob/master/export_mdl/Readme%20Images/Material%20Editor.jpg)
+![Material Editor](https://github.com/khalv/mdl-exporter/blob/master/images/Material%20Editor.jpg)
 
 If no data is specified, the exporter will attempt to derive the material's properties from whatever data exists. This is a legacy feature and there is really no reason for doing this other than if you already have a node setup and want to attempt at exporting a similar look. 
 
@@ -52,9 +52,8 @@ Cameras are exported as-is.
 ### Lights
 Switch to Blender Render to get more alternatives for changing the properties of your lights. Lights which are not Point or Directional will be considered Ambient. Attenuation always starts at 0 and ends with the max range of the light. Future versions will support animating range and energy values. A custom light editor is on the roadmap. 
 
-
-## To-do list
-* Particle systems
+### Particle Systems
+The exporter has a custom editor for configuring particle systems. The data piggybacks on the Blender ParticleSystemSettings data block, so you need to create a particle system to make the MDL particle editor appear. This also allows for shared particle data among emitters - just remember to make it single-user first if you copy one so that you don't overwrite your old data. I've chosen to name the emitters "Model Emitter", and "Particle Emitter" rather than "ParticleEmitter" and "ParticleEmitter2", since it's more descriptive of what they do. Ribbons are also supported. The bounds of whatever object the particle system is attached to defines the width and height of the emitter. 
 
 
 
