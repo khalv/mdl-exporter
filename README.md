@@ -3,7 +3,7 @@ Warcraft MDL exporter for Blender
 By Kalle Halvarsson
 
 ## Installation
-* Add mdl-exporter folder to a zip or rar file
+* Add export_mdl folder to a zip or rar file
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
 * The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
 
