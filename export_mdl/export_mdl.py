@@ -617,7 +617,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 psys.emitter = settings.mdl_particle_sys
                 psys.pivot = global_matrix * Vector(obj.location)
                 
-                psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.dimensions)
+                psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.scale)
                 psys.dimensions = Vector(map(abs, global_matrix * psys.dimensions))
                 psys.parent = parent
                 psys.visibility = visibility
@@ -687,22 +687,21 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     objects['ribbon'].add(psys)
             
         # Meshes
-        elif obj.type == 'MESH' and obj.name.startswith('Collision'):
+        elif obj.type == 'EMPTY' and obj.name.startswith('Collision'):
             collider = Object(obj.name)
             collider.parent = parent
             collider.pivot = global_matrix * Vector(obj.location)
             
             if 'Box' in obj.name:
                 collider.type = 'Box'
-                min, max = calc_extents(obj.bound_box)
+                min, max = ((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)) #calc_extents(obj.bound_box)
 
-                s = global_matrix.median_scale
-                collider.verts = [min * s, max * s]
+                collider.verts = [global_matrix * obj.world_matrix * Vector(min), global_matrix * obj.world_matrix * Vector(max)] # TODO: World space or relative to pivot??
                 objects['collisionshape'].add(collider)
             elif 'Sphere' in obj.name:
                 collider.type = 'Sphere'
                 collider.verts = [global_matrix * Vector(obj.location)]
-                collider.radius = sum(global_matrix * obj.dimensions)/6 # Average of all dimensions times half goes for radius
+                collider.radius = global_matrix.median_scale() * math.sqrt(sum(x * x for x in obj.scale))
                 objects['collisionshape'].add(collider)
 
         elif obj.type == 'MESH':

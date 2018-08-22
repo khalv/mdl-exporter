@@ -128,7 +128,7 @@ class EventPropertyGroup(bpy.types.PropertyGroup):
                     items = get_event_items,
                     update = update_event_id
                     )
-        
+  
 class CUSTOM_OT_create_eventobject(bpy.types.Operator):
     bl_idname = "object.create_eventobject"
     bl_label = "Add MDL Event Object"
@@ -155,22 +155,31 @@ class CUSTOM_OT_create_eventobject(bpy.types.Operator):
         
         return {'FINISHED'}
     
-class CUSTOM_OT_create_colshape(bpy.types.Operator):
+class CUSTOM_OT_create_col_shape(bpy.types.Operator):
     bl_idname = "object.create_collision_shape"
     bl_label = "Add MDL Collision Shape"
     
-    action = bpy.props.EnumProperty(
-            items = [('Sphere', "Collision Sphere", ""),
-                     ('Box', "Collision Box", "")]
+    shape = bpy.props.EnumProperty(
+            name = "Type",
+            items = [('SPHERE', "Collision Sphere", ""),
+                     ('CUBE', "Collision Box", "")],
+            default = 'SPHERE'
             )
-        
+
     def invoke(self, context, event):
-        if self.action == 'Sphere':
-            bpy.ops.mesh.primitive_uv_sphere_add(location=context.scene.cursor_location, size=0.5)
-        elif self.action == 'Box':
-            bpy.ops.mesh.primitive_cube_add(location=context.scene.cursor_location, radius=0.5)
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+        
+    def execute(self, context):
+        bpy.ops.object.empty_add(type=self.shape, radius=1.0, view_align=False, location=context.scene.cursor_location)
             
         obj = context.active_object
-        obj.draw_type = 'WIRE'    
+        counter = 0
+        
+        while True:
+            if not any((bpy.data.objects.get("Collision%s%d" % (name, counter)) for name in ('Box', 'Sphere'))):
+                obj.name = "Collision%s%d" % ('Sphere' if self.shape == 'SPHERE' else 'Box', counter)
+                break
+            counter += 1
         
         return {'FINISHED'}
