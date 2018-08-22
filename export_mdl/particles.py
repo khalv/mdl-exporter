@@ -357,7 +357,7 @@ class CUSTOM_PT_ParticleEditorPanel(bpy.types.Panel):
             
             layout.label("Emission Cone")
             layout.prop(psys, "longitude")
-            layout.prop(psys, "latiitude")
+            layout.prop(psys, "latitude")
             
         elif psys.emitter_type == 'RibbonEmitter':
             layout.prop_search(psys, "ribbon_material", bpy.data, "materials")

@@ -622,6 +622,58 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 psys.parent = parent
                 psys.visibility = visibility
                 
+                psys.emission_rate_anim = None
+                psys.speed_anim = None
+                psys.life_span_anim = None
+                psys.gravity_anim = None
+                psys.variation_anim = None
+                psys.latitude_anim = None
+                psys.longitude_anim = None
+                psys.ribbon_color_anim = None
+                psys.alpha_anim = None
+                
+                psys.scale_anim = get_curves(obj, 'scale', (0, 1))
+                
+                if settings.animation_data is not None:
+                    # Animated properties
+                    fcurves = settings.animation_data.action.fcurves
+                    
+                    curve = fcurves.find("mdl_particle_sys.emission_rate")
+                    if curve is not None:
+                        psys.emission_rate_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.speed")
+                    if curve is not None:
+                        psys.speed_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.life_span")
+                    if curve is not None:
+                        psys.life_span_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.gravity")
+                    if curve is not None:
+                        psys.gravity_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.variation")
+                    if curve is not None:
+                        psys.variation_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.latitude")
+                    if curve is not None:
+                        psys.latitude_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.longitude")
+                    if curve is not None:
+                        psys.longitude_anim = curve
+                        
+                    curve = fcurves.find("mdl_particle_sys.alpha")
+                    if curve is not None:
+                        psys.alpha_anim = curve
+                        
+                    curves = get_curves(settings, "mdl_particle_sys.ribbon_color", (0, 1, 2))
+                    if curves is not None:
+                        psys.ribbon_color_anim = curves
+                
                 if psys.emitter.emitter_type == 'ParticleEmitter':
                     objects['particle'].add(psys)
                 elif psys.emitter.emitter_type == 'ParticleEmitter2':
@@ -1142,17 +1194,44 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tObjectId %d,\n" % object_indices[psys.name])
                 if psys.parent is not None:
                     fw("\tParent %d,\n" % object_indices[psys.parent])
+                    
                 fw("\tEmitterUsesMDL,\n")
-                fw("\tEmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
-                fw("\tGravity %s,\n" % f2s(rnd(emitter.gravity)))
-                fw("\tLongitude %s,\n" % f2s(rnd(emitter.longitude)))
-                fw("\tLatitude %s,\n" % f2s(rnd(emitter.latitude)))
+                
+                if psys.emission_rate_anim is not None:
+                    write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+                
+                if psys.gravity_anim is not None:
+                    write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
+                    
+                if psys.longitude_anim is not None:
+                    write_anim(psys.longitude_anim, "Longitude", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Longitude %s,\n" % f2s(rnd(emitter.latitude)))
+                
+                if psys.latitude_anim is not None:
+                    write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
+                    
                 visibility = psys.visibility
                 if visibility is not None:
                     write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
                 fw("\tParticle {\n")
-                fw("\t\tstatic LifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
-                fw("\t\tstatic InitVelocity %s,\n" % f2s(rnd(emitter.speed)))
+                
+                if psys.life_span_anim is not None:
+                    write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t\t")
+                else:
+                    fw("\t\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+                  
+                if psys.speed_anim is not None:
+                    write_anim(psys.speed_anim, "InitVelocity", fw, global_seqs, "\t\t")
+                else:
+                    fw("\t\tstatic InitVelocity %s,\n" % f2s(rnd(emitter.speed)))
+
                 fw("\t\tPath \"%s\",\n" % emitter.model_path)
                 fw("\t}\n")
                 fw("}\n")
@@ -1183,17 +1262,47 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 if emitter.xy_quad:
                     fw("\tXYQuad,\n")
                     
-                fw("\tstatic Speed %s,\n" % f2s(rnd(emitter.speed)))
-                fw("\tstatic Variation %s,\n" % f2s(rnd(emitter.variation)))
-                fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
-                fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
+                if psys.speed_anim is not None:
+                    write_anim(psys.speed_anim, "Speed", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Speed %s,\n" % f2s(rnd(emitter.speed)))
+                    
+                if psys.variation_anim is not None:
+                    write_anim(psys.variation_anim, "Variation", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Variation %s,\n" % f2s(rnd(emitter.variation)))
+                    
+                if psys.latitude_anim is not None:
+                    write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
+                    
+                if psys.gravity_anim is not None:
+                    write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
+                    
                 visibility = psys.visibility
                 if visibility is not None:
                     write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
-                fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
-                fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
-                fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
-                fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
+                    
+                if psys.life_span_anim is not None:
+                    write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t")
+                else:
+                    fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+                    
+                if psys.emission_rate_anim is not None:
+                    write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+                    
+                if psys.scale_anim is not None:
+                    write_anim(psys.scale_anim[('scale', 0)], "Width", fw, global_seqs, "\t")
+                    write_anim(psys.scale_anim[('scale', 1)], "Length", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
+                    fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
+                    
                 fw("\t%s,\n" % emitter.filter_mode)
                 fw("\tRows %d,\n" % emitter.rows)
                 fw("\tColumns %d,\n" % emitter.cols)
@@ -1234,8 +1343,17 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     
                 fw("\tstatic HeightAbove %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
                 fw("\tstatic HeightBelow %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
-                fw("\tstatic Alpha %s,\n")
-                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
+                
+                if psys.alpha_anim is not None:
+                    write_anim(psys.alpha_anim, "Width", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Alpha %s,\n" % emitter.alpha)
+                
+                if psys.ribbon_color_anim is not None:
+                    write_anim_vec(psys.ribbon_color_anim, 'Color', 'ribbon_color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                else:
+                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
+                    
                 fw("\tstatic TextureSlot %d,\n" % textures.index(emitter.texture_path))
                 visibility = psys.visibility
                 if visibility is not None:
