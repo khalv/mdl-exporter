@@ -339,6 +339,11 @@ def parse_materials(materials, const_color_mats):
                 layer.no_depth_set = layer_settings.no_depth_set
                 layer.alpha_value = layer_settings.alpha
                 layer.alpha_anim = get_curve(mat, {'mdl_layers[%d].alpha' % i})
+                
+                if mat.use_nodes:
+                    uv_node = mat.node_tree.nodes.get(layer_settings.name, None)
+                    if uv_node is not None and mat.node_tree.animation_data is not None:
+                        layer.texture_anim = get_texture_anim(mat.node_tree.animation_data, uv_node)
         
                 material.layers.append(layer)
 
@@ -493,25 +498,25 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_m
         fw("\t\t%d: {%s, %s, %s, %s},\n" % (f2ms * int(x.co[0]), f2s(rnd(rot.x)), f2s(rnd(rot.y)), f2s(rnd(rot.z)), f2s(rnd(rot.w))))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan {%s, %s, %s, %s},\n" % (f2s(rnd(x)) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
-            fw("\t\t\tOutTan {%s, %s, %s, %s},\n" % (f2s(rnd(x)) for x in rot))
+            fw("\t\t\tInTan {%s, %s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
+            fw("\t\t\tOutTan {%s, %s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in rot))
 
     fw("\t}\n")
     
-def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, order = (0, 1, 2)):
+def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, indent = "\t", order = (0, 1, 2)):
     
     xcurve = anim[(data_path, order[0])]
     ycurve = anim[(data_path, order[1])]
     zcurve = anim[(data_path, order[2])]
 
-    fw("\t%s %d {\n" % (name, len(xcurve.keyframe_points)))
+    fw(indent+"%s %d {\n" % (name, len(xcurve.keyframe_points)))
     
     interp = get_interp(xcurve.keyframe_points[0].interpolation)
     
-    fw("\t\t%s,\n" % interp) # Interpolation mode 
+    fw(indent+"\t%s,\n" % interp) # Interpolation mode 
     
     if get_global_seq(xcurve) > 0:
-        fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
+        fw(indent+"\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
        
     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
         rot = bone_matrix.to_quaternion()
@@ -523,14 +528,14 @@ def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, order = 
         handle_l.rotate(rot)
         handle_r.rotate(rot)
         
-        fw("\t\t%d: {%s, %s, %s},\n" % (f2ms * int(x.co[0]), f2s(rnd(vec.x)), f2s(rnd(vec.y)), f2s(rnd(vec.z))))
+        fw(indent+"\t%d: {%s, %s, %s},\n" % (f2ms * int(x.co[0]), f2s(rnd(vec.x)), f2s(rnd(vec.y)), f2s(rnd(vec.z))))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan {%s, %s, %s},\n" % (f2s(rnd(x)) for x in handle_l))
-            fw("\t\t\tOutTan {%s, %s, %s},\n" % (f2s(rnd(x)) for x in handle_r))
+            fw(indent+"\t\tInTan {%s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in handle_l))
+            fw(indent+"\t\tOutTan {%s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in handle_r))
         else:
             pass # Hermite interpolation not supported by Blender. 
-    fw("\t}\n")
+    fw(indent+"}\n")
     
 def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
 
@@ -826,6 +831,10 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
         if psys.emitter.texture_path not in textures:
             textures.append(psys.emitter.texture_path)
+            
+    tvertex_anims = [layer.texture_anim for layer in mdl_layers if layer.texture_anim is not None]
+    
+    print(len(tvertex_anims))
     
     sequences = get_sequences(context.scene)
     if len(sequences) == 0:
@@ -952,6 +961,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 else:
                     fw("\t\t\tstatic TextureID 0,\n")  
                     
+                if layer.texture_anim is not None:
+                    fw("\t\t\tTVertexAnimId %d,\n" % tvertex_anims.index(layer.texture_anim))
                 if layer.alpha_anim is not None:
                     write_anim(layer.alpha_anim, "Alpha", fw, global_seqs, "\t\t")
                 else:
@@ -960,6 +971,22 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\t\t}\n")
             fw("\t}\n")
         fw("}\n")
+        
+        if (len(tvertex_anims)):
+            fw("TextureAnims %d {\n" % len(tvertex_anims))
+            for uv_anim in tvertex_anims:
+                fw("\tTVertexAnim {\n")
+                if ('translation', 0) in uv_anim.keys():
+                    translation = {('translation', i) : uv_anim[('translation', i )] for i in range(3)}
+                    write_anim_vec(translation, "Translation", 'translation', fw, global_seqs, Matrix(), "\t\t")
+                if ('rotation', 0) in uv_anim.keys():
+                    rotation = {('rotation', i) : uv_anim[('rotation', i )] for i in range(3)}
+                    write_anim_vec(translation, "Rotation", 'rotation', fw, global_seqs, Matrix(), "\t\t")
+                if ('scale', 0) in uv_anim.keys():
+                    translation = {('scale', i) : uv_anim[('scale', i )] for i in range(3)}
+                    write_anim_vec(translation, "Scaling", 'scale', fw, global_seqs, Matrix(), "\t\t")
+                fw("\t}\n")
+            fw("}\n")
         
         for i, geoset in enumerate(geosets.values()):
             # Geoset start
@@ -1019,7 +1046,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     else: 
                         fw("\tstatic Alpha 1.0,\n")
                     if vertexcolor is not None:
-                        write_anim_vec(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), (2, 1, 0))
+                        write_anim_vec(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
                     fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
                 fw("}\n")
             
