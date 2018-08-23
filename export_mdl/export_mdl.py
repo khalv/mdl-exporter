@@ -196,52 +196,6 @@ def get_texture_anim(animdata, uv_node):
                     anim[(tag, i)] = fcurve
                 
     return anim if len(anim) else None
-    
-# Not used, for future reference only
-def get_layers_recursive(node, mat):
-    layers = []
-    
-    if node is None:
-        return layers
-    
-    if node.bl_static_type == 'MIX_SHADER':
-        for input in node.inputs:
-            if input.link is not None and input.link.from_node is not None:
-                layers += get_layers_recursive(input.link.from_node, mat)
-    elif node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
-        layer = MaterialLayer()
-        link = node.inputs[0].links[0]
-        if link is not None:
-            tex_node = get_texture_node(link.from_node)
-            if tex_node is not None:
-                layer.texture = tex_node.image
-                uv_node = tex_node.inputs[0].links[0]
-                if uv_node is not None:
-                   if uv_node.from_node.bl_static_type == 'MAPPING':
-                       layer.texture_anim = get_texture_anim(mat, uv_node)
-                # Add the layer       
-                layers.append(layer)
-    elif node.bl_static_type == 'ADD_SHADER':
-        layer = MaterialLayer()
-        tex_node = None
-        for input in node.inputs:
-            link = input.links[0]
-            if link is not None:
-                if link.from_node.bl_static_type in ('BSDF_DIFFUSE', 'BSDF_TRANSPARENT'):
-                    tex_node = get_texture_node(link.from_node)
-                    if tex_node is not None:
-                        layer.texture = tex_node.image
-                        uv_node = tex_node.inputs[0].links[0]
-                        if uv_node is not None:
-                           if uv_node.from_node.bl_static_type == 'MAPPING':
-                               layer.texture_anim = get_texture_anim(mat.node_tree.animation_data, uv_node)
-                            
-                elif link.from_node.bl_static_type == 'EMISSIVE':
-                    layer.unshaded = True
-        if tex_node is not None:  
-            layers.append(layer)
-            
-    return layers
   
 def get_filter_mode(tag):
     if tag == 'ADD':
@@ -431,13 +385,13 @@ def get_parent(obj):
     if parent is None:
         return None # Instead return object name??
         
-    if obj.parent_type == 'BONE':
+    if obj.parent_type == 'BONE': #TODO: Check if animated - otherwise, make it a helper
         return obj.parent_bone if obj.parent_bone != "" else None
         
-    anim_loc = get_curves(obj, 'location', (1, 2, 3))
-    anim_rot = get_curves(obj, 'rotation_quaternion', (1, 2, 3, 4))
-    anim_scale = get_curves(obj, 'scale', (1, 2, 3))
-    animations = {anim_loc, anim_rot, anim_scale}
+    anim_loc = get_curves(parent, 'location', (1, 2, 3))
+    anim_rot = get_curves(parent, 'rotation_quaternion', (1, 2, 3, 4))
+    anim_scale = get_curves(parent, 'scale', (1, 2, 3))
+    animations = (anim_loc, anim_rot, anim_scale)
     
     if not any(animations):
         return get_parent(parent)
@@ -492,14 +446,17 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_m
         fw("\t\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
        
     for x, y, z, w in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points, wcurve.keyframe_points):
+        # At some point i plan to use itertools.zip_longest and evaluate missing frames... this is for that
+        frame = [k.co[0] for k in (x, y, z, w) if k is not None][0]
+        
         rot = Quaternion((x.co[1], y.co[1], z.co[1], w.co[1]))
-        rot = global_matrix.inverted().to_quaternion() * rot.inverted() * global_matrix.to_quaternion()
+        rot = global_matrix.to_quaternion() * rot * global_matrix.inverted().to_quaternion() 
         rot.normalize()
-        fw("\t\t%d: {%s, %s, %s, %s},\n" % (f2ms * int(x.co[0]), f2s(rnd(rot.x)), f2s(rnd(rot.y)), f2s(rnd(rot.z)), f2s(rnd(rot.w))))
+        fw("\t\t%d: { %s, %s, %s, %s },\n" % (f2ms * int(frame), f2s(rnd(rot.x)), f2s(rnd(rot.y)), f2s(rnd(rot.z)), f2s(rnd(rot.w))))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan {%s, %s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
-            fw("\t\t\tOutTan {%s, %s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in rot))
+            fw("\t\t\tInTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
+            fw("\t\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot))
 
     fw("\t}\n")
     
@@ -518,21 +475,25 @@ def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, indent =
     if get_global_seq(xcurve) > 0:
         fw(indent+"\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
        
+    rot = bone_matrix.to_quaternion()
+    scale = bone_matrix.to_scale()
+       
     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
-        rot = bone_matrix.to_quaternion()
-        scale = bone_matrix.to_scale()
+        # At some point i plan to use itertools.zip_longest and evaluate missing frames... this is for that
+        frame = [k.co[0] for k in (x, y, z) if k is not None][0]
+        
+        handle_l = Vector((x.handle_left[1] * scale.x, y.handle_left[1] * scale.y, z.handle_left[1] * scale.z)) 
+        handle_r = Vector((x.handle_right[1] * scale.x, y.handle_right[1] * scale.y, z.handle_right[1] * scale.z)) 
         vec = Vector((x.co[1] * scale.x, y.co[1] * scale.y, z.co[1] * scale.z))
-        handle_l = Vector((x.handle_left[1] * scale.x, y.handle_left[1] * scale.y, z.handle_left[1] * scale.z))
-        handle_r = Vector((x.handle_right[1] * scale.x, y.handle_right[1] * scale.y, z.handle_right[1] * scale.z))
         vec.rotate(rot)
         handle_l.rotate(rot)
         handle_r.rotate(rot)
         
-        fw(indent+"\t%d: {%s, %s, %s},\n" % (f2ms * int(x.co[0]), f2s(rnd(vec.x)), f2s(rnd(vec.y)), f2s(rnd(vec.z))))
+        fw(indent+"\t%d: { %s, %s, %s },\n" % (f2ms * int(frame), f2s(rnd(vec.x)), f2s(rnd(vec.y)), f2s(rnd(vec.z))))
             
         if interp == 'Bezier':
-            fw(indent+"\t\tInTan {%s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in handle_l))
-            fw(indent+"\t\tOutTan {%s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in handle_r))
+            fw(indent+"\t\tInTan { %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in handle_l))
+            fw(indent+"\t\tOutTan { %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in handle_r))
         else:
             pass # Hermite interpolation not supported by Blender. 
     fw(indent+"}\n")
@@ -729,7 +690,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_loc = anim_loc
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
-                bone.matrix = Matrix()
+                bone.matrix = obj.matrix_world
                 objects['bone'].add(bone)
                 parent = bone.name
             
@@ -831,7 +792,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 att.visibility = visibility
                 objects['attachment'].add(att)
             elif obj.name.startswith("Bone_") and is_animated:
-                pass
+                bone = Object(obj.name)
+                if parent is not None:
+                    bone.parent = parent
+                bone.pivot = global_matrix * Vector(obj.location)
+                bone.anim_loc = anim_loc
+                bone.anim_rot = anim_rot
+                bone.anim_scale = anim_scale
+                bone.matrix = obj.matrix_world
+                objects['bone'].add(bone)
         elif obj.type == 'ARMATURE':
             for b in obj.pose.bones:
                 bone = Object(b.name)
