@@ -74,7 +74,7 @@ class MaterialLayerSettings(bpy.types.PropertyGroup):
     path = StringProperty(
         name = "Texture Path",
         default = "",
-        maxlen = 64
+        maxlen = 256
         )
      
     @classmethod

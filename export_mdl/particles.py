@@ -244,13 +244,13 @@ class ParticleSystemSettings(PropertyGroup):
     texture_path = StringProperty(
         name = "Texture Path",
         default = "",
-        maxlen = 128
+        maxlen = 256
         )
         
     model_path = StringProperty(
         name = "Model Path",
         default = "",
-        maxlen = 128
+        maxlen = 100
         )
         
     head_life_start = IntProperty(
