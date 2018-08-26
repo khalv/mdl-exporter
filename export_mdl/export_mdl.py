@@ -730,7 +730,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                         if len(vgroups):
                             groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if obj.vertex_groups[vg.group].name.lower().startswith("bone"))[:3]
                     elif parent is not None:
-                        groups = list(parent)
+                        groups = [parent]
                                 
                     if groups is not None:
                         if groups not in geoset.matrices:
@@ -755,7 +755,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 geoset.objects.append(obj) 
                 geoset.min_extent, geoset.max_extent = calc_extents([x[0] for x in geoset.vertices])
                 if not len(geoset.matrices) and parent is not None:
-                    geoset.matrices.append(parent)
+                    geoset.matrices.append([parent])
                 if any((vertexcolor, visibility)):
                     geoset_anim = {"color" : vertexcolor, "visibility" : visibility, "geoset" : geoset}
                     if vertexcolor is not None:
