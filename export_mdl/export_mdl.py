@@ -722,29 +722,23 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
                     uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
                     tvert = (rnd(uv.x), rnd(uv.y))
-                    group = None
-                    groupname = None
+                    groups = None
+                    matrix = 0
                     
                     if armature is not None:
                         vgroups = sorted(mesh.vertices[vert].groups[:], key=lambda x:x.weight, reverse=True) # Sort bones by descending weight
                         if len(vgroups):
-                            for vgroup in vgroups:
-                                groupname = obj.vertex_groups[vgroup.group].name
-                                if groupname.lower().startswith("bone"):
-                                    break # We are only interested in the first bone
-                                groupname = None # There could be vertex groups with other names than "Bone"!
+                            groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if obj.vertex_groups[vg.group].name.lower().startswith("bone"))[:3]
                     elif parent is not None:
-                        groupname = parent
+                        groups = list(parent)
                                 
-                    if groupname is not None:
-                        if groupname not in geoset.matrices:
-                            geoset.matrices.append(groupname)
-                        group = geoset.matrices.index(groupname)
-                    else:
-                        group = 0 # TODO: Remember to append parent to matrices if no armature!
+                    if groups is not None:
+                        if groups not in geoset.matrices:
+                            geoset.matrices.append(groups)
+                        matrix = geoset.matrices.index(groups)
 
                     
-                    vertex = (coord, norm, tvert, group)
+                    vertex = (coord, norm, tvert, matrix)
                     if vertex not in geoset.vertices:
                         geoset.vertices.append(vertex)
                         
@@ -1045,7 +1039,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             fw("\tGroups %d %d {\n" % (len(geoset.matrices), len(geoset.matrices))) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
             for matrix in geoset.matrices:
-                fw("\t\tMatrices {%d},\n" % object_indices[matrix])
+                fw("\t\tMatrices {%s},\n" % ','.join(str(object_indices[g]) for g in matrix))
             fw("\t}\n")
             
             fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.min_extent)))
@@ -1062,7 +1056,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     alpha = anim["visibility"]
                     vertexcolor = anim["color"]
                     if alpha is not None:
-                        write_anim(alpha, "Alpha", fw, global_seqs, "\t")
+                        write_anim(alpha, "Alpha", fw, global_seqs, "\t", True)
                     else: 
                         fw("\tstatic Alpha 1.0,\n")
                     if vertexcolor is not None:
@@ -1147,7 +1141,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tAttachmentID %d,\n" % i)
                 visibility = attachment.visibility
                 if visibility is not None:
-                    write_anim(visibility, "Visibility", fw, global_seqs, "\t")
+                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
                 fw("}\n")
             
             fw("PivotPoints %d {\n" % len(objects_all))
