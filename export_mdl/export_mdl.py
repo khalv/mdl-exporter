@@ -820,16 +820,54 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             light = Object(obj.name)
             light.object = obj
             light.pivot = global_matrix * Vector(obj.location)
-            light.intensity = get_curve(obj, ['energy'])
-            if light.intensity is not None and get_global_seq(light.intensity) > 0:
-                global_seqs.add(get_global_seq(light.intensity))
+            
+            if hasattr(obj.data, "mdl_light"):
+                light_data = obj.data.mdl_light
+                light.type = light_data.light_type
+            
+                light.intensity = light_data.intensity
+                light.intensity_anim = get_curve(obj.data, ['mdl_light.intensity'])
+                if light.intensity_anim is not None and get_global_seq(light.intensity_anim) > 0:
+                    global_seqs.add(get_global_seq(light.intensity_anim))
+                
+                light.atten_start = light_data.atten_start
+                light.atten_start_anim = get_curve(obj.data, ['mdl_light.atten_start'])
+                if light.atten_start_anim is not None and get_global_seq(light.atten_start_anim) > 0:
+                    global_seqs.add(get_global_seq(light.atten_start_anim))
+                    
+                light.atten_end = light_data.atten_end
+                light.atten_end_anim = get_curve(obj.data, ['mdl_light.atten_end'])
+                if light.atten_end_anim is not None and get_global_seq(light.atten_end_anim) > 0:
+                    global_seqs.add(get_global_seq(light.atten_end_anim))
+                
+                light.color = light_data.color
+                light.color_anim = get_curve(obj.data, ['mdl_light.color'])
+                if light.color_anim is not None and get_global_seq(light.color_anim[0]) > 0:
+                    global_seqs.add(get_global_seq(light.color_anim[0]))
+                    
+                light.amb_color = light_data.amb_color
+                light.amb_color_anim = get_curve(obj.data, ['mdl_light.amb_color'])
+                if light.amb_color_anim is not None and get_global_seq(light.amb_color_anim[0]) > 0:
+                    global_seqs.add(get_global_seq(light.amb_color_anim[0]))
+                    
+                light.amb_intensity = light_data.amb_intensity
+                light.amb_intensity_anim = get_curve(obj.data, ['obj.mdl_light.amb_intensity'])
+                if light.amb_intensity_anim is not None and get_global_seq(light.amb_intensity_anim) > 0:
+                    global_seqs.add(get_global_seq(light.amb_intensity_anim))
+                    
+            else:
+                # Legacy / fallback method
+                light.intensity = get_curve(obj, ['energy'])
+                if light.intensity is not None and get_global_seq(light.intensity) > 0:
+                    global_seqs.add(get_global_seq(light.intensity))
+                light.range = get_curve(obj, ['distance'])
+                if light.range is not None and get_global_seq(light.range) > 0:
+                    global_seqs.add(get_global_seq(light.intensity))
+                light.color = get_curves(obj, 'color', (0, 1, 2))
+                if light.color is not None and get_global_seq(light.color[0]) > 0:
+                    global_seqs.add(get_global_seq(light.color[0]))
+                    
             light.visibility = visibility
-            light.range = get_curve(obj, ['distance'])
-            if light.range is not None and get_global_seq(light.range) > 0:
-                global_seqs.add(get_global_seq(light.intensity))
-            light.color = get_curves(obj, 'color', (0, 1, 2))
-            if light.color is not None and get_global_seq(light.color[0]) > 0:
-                global_seqs.add(get_global_seq(light.color[0]))
             objects['light'].add(light)
             # lights.append({"object" : obj, "visibility" : visibility, "intensity" : intensity, "att_end" : range, "color" : color})
         elif obj.type == 'CAMERA':
@@ -1102,31 +1140,41 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     
                 if light.parent is not None:
                     fw("\tParent %d,\n" % object_indices[light.parent])
-                    
-                isAmbient = False
-                if l.type == 'POINT':
-                    fw("\tOmnidirectional,\n")
-                elif l.type == 'SPOT' or l.type == 'HEMI':
-                    fw("\tDirectional,\n")
+                   
+                fw("\t%s,\n" % light.type)
+                
+                if light.atten_start_anim is not None:
+                    write_anim(light.atten_start_anim, "AttenuationStart", fw, global_seqs, "\t")
                 else:
-                    fw("\tAmbient,\n")
-                    isAmbient = True
-                fw("\tstatic AttenuationStart 0,\n")
-                fw("\tstatic AttenuationEnd %s,\n" % f2s(l.data.distance)) #TODO: Add animation support
-                if isAmbient:
-                    fw("\tstatic Color {%s, %s, %s},\n" % ('1', '1', '1')) # TODO: Add animation support
-                    fw("\tstatic Intensity %s,\n" % '0')
-                    fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, l.data.color)))
-                    fw("\tstatic AmbIntensity %s,\n" % f2s(l.data.energy)) # TODO: Add animation support
-                else:
-                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, l.data.color)))
-                    fw("\tstatic Intensity %s,\n" % f2s(l.data.energy))
-                    fw("\tstatic AmbColor {1, 1, 1},\n")
-                    fw("\tstatic AmbIntensity 0,\n")
+                    fw("\tstatic AttenuationStart %s,\n" % f2s(light.atten_start))
                     
-                visibility = light.visibility
-                if visibility is not None:
-                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+                if light.atten_end_anim is not None:
+                    write_anim(light.atten_end_anim, "AttenuationEnd", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic AttenuationEnd %s,\n" % f2s(light.atten_end)) #TODO: Add animation support
+                   
+                if light.color_anim is not None:
+                    write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix())
+                else:
+                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, light.color)))
+                   
+                if light.intensity_anim is not None:
+                    write_anim(light.intensity_anim, "Intensity", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic Intensity %s,\n" % f2s(light.intensity))
+                   
+                if light.amb_color_anim is not None:
+                    write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix())
+                else:
+                    fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, light.amb_color)))
+                    
+                if light.amb_intensity_anim is not None:
+                    write_anim(light.amb_intensity_anim, "AmbIntensity", fw, global_seqs, "\t")
+                else:
+                    fw("\tstatic AmbIntensity %s,\n" % f2s(light.amb_intensity))
+                    
+                if light.visibility is not None:
+                    write_anim(light.visibility, "Visibility", fw, global_seqs, "\t", True)
                 fw("}\n")
                 
                 

@@ -30,9 +30,10 @@ if "bpy" in locals():
   imp.reload(materials)
   imp.reload(objects)
   imp.reload(particles)
+  imp.reload(lights)
   imp.reload(export_mdl)
 else:
-  from . import materials, objects, export_mdl, particles
+  from . import materials, objects, export_mdl, particles, lights
 
 import bpy  
   
