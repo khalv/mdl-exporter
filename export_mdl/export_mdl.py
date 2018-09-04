@@ -267,7 +267,7 @@ def get_layers_from_slots(texture_slots):
                 
     return layers
   
-def parse_materials(materials, const_color_mats):
+def parse_materials(materials, const_color_mats, global_seqs):
     result = []
     
     for index, mat in materials.items():
@@ -298,6 +298,20 @@ def parse_materials(materials, const_color_mats):
                     uv_node = mat.node_tree.nodes.get(layer_settings.name, None)
                     if uv_node is not None and mat.node_tree.animation_data is not None:
                         layer.texture_anim = get_texture_anim(mat.node_tree.animation_data, uv_node)
+                        if layer.texture_anim is not None:
+                            if ('translation', 0) in layer.texture_anim.keys():
+                                global_seq = get_global_seq(layer.texture_anim[('translation', 0)])
+                                if global_seq > 0:
+                                    global_seqs.add(global_seq)
+                            if ('rotation', 0) in layer.texture_anim.keys():
+                                global_seq = get_global_seq(layer.texture_anim[('rotation', 0)])
+                                if global_seq > 0:
+                                    global_seqs.add(global_seq)
+                            if ('scale', 0) in layer.texture_anim.keys():
+                                global_seq = get_global_seq(layer.texture_anim[('scale', 0)])
+                                if global_seq > 0:
+                                    global_seqs.add(global_seq)
+                        
         
                 material.layers.append(layer)
 
@@ -372,11 +386,11 @@ def calc_extents(vertices):
     
 # Cycles modifier is used to create looping sequences
 def get_global_seq(fcurve):
-    if fcurve.modifiers:
+
+    if fcurve is not None and fcurve.modifiers:
         for mod in fcurve.modifiers:
             if mod.type == 'CYCLES':
                 return int(fcurve.range()[1] * f2ms)
-            
     return -1
     
 def get_parent(obj):
@@ -875,7 +889,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
     # objects = [*bones.keys(), *[l["object"] for l in lights], *[h["object"] for h in helpers], *[a["object"] for a in attachments], *[e["object"] for e in events]]
     
-    mdl_materials = parse_materials(materials, const_color_mats)
+    mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
 
