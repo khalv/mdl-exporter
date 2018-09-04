@@ -900,6 +900,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         default_mat = Material(0)
         default_mat.layers.append(MaterialLayer())
         mdl_materials.append(default_mat)
+        operator.report({'WARNING'}, "No materials found!")
 
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
