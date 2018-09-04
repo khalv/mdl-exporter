@@ -44,7 +44,7 @@ Similar to attachments, event objects are created by giving an empty object a na
 There is a helper operator for creating event objects which you can find by pressing the spacebar and searching for "Add MDL event track". These will give you fields where you can select the exact type and ID name from a list of names.
 
 ### Collision Shapes
-Collision shapes in Warcraft are used primarily to define the selectable area of a unit. You can create theese by adding any geometric shape and naming it "CollisionBox" or "CollisionSphere". The exporter will use the bounds to calculate a radius or min/max points automatically. Note that collision boxes are always saved as axis aligned. There will be helper operators for quickly creating collision shapes named "Add MDL Collison Box" and "Add MDL Collision Sphere" respectively.  
+Collision shapes in Warcraft are used primarily to define the selectable area of a unit. You can create theese by adding any geometric shape and naming it "CollisionBox" or "CollisionSphere". The exporter will use the bounds to calculate a radius or min/max points automatically. Note that collision boxes are always saved as axis aligned. There is a helper operator for quickly creating collision shapes named "Add MDL Collison Shape".
 
 ### Cameras
 Cameras are exported as-is.
