@@ -692,6 +692,10 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for m in obj.modifiers:
                 if m.type == 'ARMATURE':
                     armature = m
+            
+            bone_names = set()
+            if armature is not None:
+                bone_names = set(b.name for b in armature.object.data.bones)
                 
             bone = None
             if (armature is None and parent is None) or is_animated:
@@ -742,7 +746,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     if armature is not None:
                         vgroups = sorted(mesh.vertices[vert].groups[:], key=lambda x:x.weight, reverse=True) # Sort bones by descending weight
                         if len(vgroups):
-                            groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if obj.vertex_groups[vg.group].name.lower().startswith("bone"))[:3]
+                            groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if obj.vertex_groups[vg.group].name in bone_names)[:3]
                     elif parent is not None:
                         groups = [parent]
                                 
@@ -890,6 +894,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     # objects = [*bones.keys(), *[l["object"] for l in lights], *[h["object"] for h in helpers], *[a["object"] for a in attachments], *[e["object"] for e in events]]
     
     mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
+    
+    # Add default material if no other materials present
+    if len(mdl_materials) == 0:
+        default_mat = Material(0)
+        default_mat.layers.append(MaterialLayer())
+        mdl_materials.append(default_mat)
+
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
 
@@ -915,6 +926,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         for object in objects[tag]:
             object_indices[object.name] = index
             objects_all.append(object)
+            vertices_all.append(object.pivot)
             index = index+1
     
     index = 0
@@ -930,8 +942,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         vertices_all.append(tuple(x - y/2 for x, y in zip(psys.pivot, psys.dimensions)))
     
     global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
-    
-    #TODO: Add funciton for printing animation blocks
     
     scene.frame_current = current_frame
     
@@ -1089,7 +1099,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t\t}\n")
             fw("\t}\n")
             
-            fw("\tGroups %d %d {\n" % (len(geoset.matrices), len(geoset.matrices))) # TODO: geoset.matricecs should be a list of lists - each "matrix" can have 1-3 bones!             
+            fw("\tGroups %d %d {\n" % (len(geoset.matrices), sum(len(mtrx) for mtrx in geoset.matrices)))         
             for matrix in geoset.matrices:
                 fw("\t\tMatrices {%s},\n" % ','.join(str(object_indices[g]) for g in matrix))
             fw("\t}\n")
@@ -1117,7 +1127,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("}\n")
             
             for bone in objects['bone']:
-                fw("Bone \"%s\" {\n" % bone.name)
+                name = bone.name.replace('.', '_')
+                if not name.lower().startswith("bone"):
+                    name = "Bone_"+name
+                    
+                fw("Bone \"%s\" {\n" % name)
                 if len(object_indices) > 1:
                     fw("\tObjectId %d,\n" % object_indices[bone.name])
                 if bone.parent is not None:
