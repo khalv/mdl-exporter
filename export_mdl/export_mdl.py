@@ -711,7 +711,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             # mesh.transform(global_matrix * obj.matrix_world)
             
             # Geoset Animation
-            vertexcolor = get_curves(obj, 'color', (0, 1, 2))
+            vertexcolor_anim = get_curves(obj, 'color', (0, 1, 2))
+            vertexcolor = obj.color if any(i != 1 for i in obj.color) else None
             
             mesh_geosets = []
             
@@ -801,14 +802,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 geoset.min_extent, geoset.max_extent = calc_extents([x[0] for x in geoset.vertices])
                 if not len(geoset.matrices) and parent is not None:
                     geoset.matrices.append([parent])
-                if any((vertexcolor, visibility)):
-                    geoset_anim = {"color" : vertexcolor, "visibility" : visibility, "geoset" : geoset}
-                    if vertexcolor is not None:
+                if any((vertexcolor, vertexcolor_anim, visibility)):
+                    
+                    geoset_anim = {"color" : vertexcolor, "color anim" : vertexcolor_anim, "visibility" : visibility, "geoset" : geoset}
+                    if any((vertexcolor, vertexcolor_anim)):
                         const_color_mats.add(geoset.mat_index)
                     if geoset_anim not in geoset_anims:
                         geoset_anims.append(geoset_anim)
                         
-                    for bone in geoset.matrices:
+                    for bone in itertools.chain.from_iterable(geoset.matrices):
                         geoset_anim_map[bone] = geoset_anim
                         
                     
@@ -827,6 +829,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 att = Object(obj.name)
                 att.pivot = global_matrix * Vector(obj.location)
                 att.visibility = visibility
+                att.billboarded = billboarded
+                att.billboard_lock = billboard_lock
                 objects['attachment'].add(att)
             elif obj.name.startswith("Bone_"):
                 bone = Object(obj.name)
@@ -837,6 +841,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
                 bone.matrix = obj.matrix_world
+                bone.billboarded = billboarded
+                bone.billboard_lock = billboard_lock
                 objects['bone'].add(bone)
         elif obj.type == 'ARMATURE':
             for b in obj.pose.bones:
@@ -862,6 +868,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             light = Object(obj.name)
             light.object = obj
             light.pivot = global_matrix * Vector(obj.location)
+            light.billboarded = billboarded
+            light.billboard_lock = billboard_lock
             
             if hasattr(obj.data, "mdl_light"):
                 light_data = obj.data.mdl_light
@@ -1132,12 +1140,16 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("GeosetAnim {\n")
                 alpha = anim["visibility"]
                 vertexcolor = anim["color"]
+                vertexcolor_anim = anim["color anim"]
                 if alpha is not None:
                     write_anim(alpha, "Alpha", fw, global_seqs, "\t", True)
                 else: 
                     fw("\tstatic Alpha 1.0,\n")
-                if vertexcolor is not None:
-                    write_anim_vec(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                    
+                if vertexcolor_anim is not None:
+                    write_anim_vec(vertexcolor_anim, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                elif vertexcolor is not None:
+                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(vertexcolor[:3]))))
                 fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
             fw("}\n")
             
@@ -1153,7 +1165,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if bone.parent is not None:
                 fw("\tParent %d,\n" % object_indices[bone.parent])
             
-            write_billboard(fw, billboarded, billboard_lock)
+            write_billboard(fw, bone.billboarded, bone.billboard_lock)
             
             children = [geoset for g in geosets.values() if bone.name in g.matrices]
             if len(children) == 1:
@@ -1188,7 +1200,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if light.parent is not None:
                 fw("\tParent %d,\n" % object_indices[light.parent])
                
-            write_billboard(fw, billboarded, billboard_lock)
+            write_billboard(fw, light.billboarded, light.billboard_lock)
             
             fw("\t%s,\n" % light.type)
             
@@ -1205,7 +1217,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if light.color_anim is not None:
                 write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix())
             else:
-                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, light.color)))
+                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(light.color[:3]))))
                
             if light.intensity_anim is not None:
                 write_anim(light.intensity_anim, "Intensity", fw, global_seqs, "\t")
@@ -1215,7 +1227,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if light.amb_color_anim is not None:
                 write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix())
             else:
-                fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, light.amb_color)))
+                fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(light.amb_color[:3]))))
                 
             if light.amb_intensity_anim is not None:
                 write_anim(light.amb_intensity_anim, "AmbIntensity", fw, global_seqs, "\t")
@@ -1243,7 +1255,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 if attachment.parent is not None:
                     fw("\tParent %d,\n" % object_indices[attachment.parent])
                     
-                write_billboard(fw, billboarded, billboard_lock)
+                write_billboard(fw, attachment.billboarded, attachment.billboard_lock)
                 
                 fw("\tAttachmentID %d,\n" % i)
                 
