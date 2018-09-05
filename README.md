@@ -35,6 +35,9 @@ To mark sequences, create timeline markers (using the M key while hovering over 
 #### Global Sequences
 Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. Only the first channel (X for scale/rotation/translation, R for RGB color) is checked for a modifier. 
 
+### Billboarding
+Bones, lights and attachment points all support billboarding. A billboarding settings panel will automatically appear in the "object" properties tab when a relevant object is selected. You can constrain billboarding to a certain axis by checking the "Billboard Lock X/Y/Z" checkboxes respectively.
+
 ### Attachment Points
 To create an attachment point, simply create an empty object and give it a name which ends with the word "Ref". For example, "Overhead Ref" will produce an attachment point called "Overhead". 
 
