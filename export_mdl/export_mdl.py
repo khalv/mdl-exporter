@@ -286,6 +286,8 @@ def parse_materials(materials, const_color_mats, global_seqs):
             for i, layer_settings in enumerate(mat.mdl_layers):    
                 layer = MaterialLayer()
                 layer.texture = layer_settings.path if layer_settings.texture_type == '0' else "ReplaceableId %s" % layer_settings.texture_type
+                if layer_settings.texture_type == '36':
+                    layer.texture = "ReplaceableId %s" % layer_settings.replaceable_id
                 layer.filter_mode = layer_settings.filter_mode
                 layer.unshaded = layer_settings.unshaded
                 layer.two_sided = layer_settings.two_sided
@@ -407,7 +409,6 @@ def register_global_seq(fcurve, global_seqs, keys=None):
             global_seqs.add(sequence)
             
 def get_parent(obj):
-
     parent = obj.parent
    
     if parent is None:
@@ -422,7 +423,9 @@ def get_parent(obj):
     animations = (anim_loc, anim_rot, anim_scale)
     
     if not any(animations):
-        return get_parent(parent)
+        root_parent = get_parent(parent)
+        if root_parent is not None:
+            return root_parent
     
     if parent.type in {'MESH', 'EMPTY', 'ARMATURE'}:
         if parent.name.startswith("Bone_"):
@@ -825,7 +828,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 att.pivot = global_matrix * Vector(obj.location)
                 att.visibility = visibility
                 objects['attachment'].add(att)
-            elif obj.name.startswith("Bone_") and is_animated:
+            elif obj.name.startswith("Bone_"):
                 bone = Object(obj.name)
                 if parent is not None:
                     bone.parent = parent
@@ -997,7 +1000,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
                 if texture.startswith("ReplaceableId"):
                     fw("\t\tImage \"\",\n")
-                    fw("\t\t%s\n," % texture)
+                    fw("\t\t%s,\n" % texture)
                 else:
                     fw("\t\tImage \"%s\",\n" % texture)
                 # ReplaceableId <int>

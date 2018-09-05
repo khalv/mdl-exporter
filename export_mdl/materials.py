@@ -26,9 +26,18 @@ class MaterialLayerSettings(bpy.types.PropertyGroup):
                  ('32', "Ashenvale Tree", "", 0, 32),
                  ('33', "Barrens Tree", "", 0, 33),
                  ('34', "Northrend Tree", "", 0, 34),
-                 ('35', "Mushroom Tree", "", 0, 35)],
+                 ('35', "Mushroom Tree", "", 0, 35),
+                 ('36', "Replaceable ID", "", 0, 36)],
         default = '0'
         )
+        
+    replaceable_id = IntProperty(
+        name = "ID",
+        description = "ID of the replaceable texture.",
+        default = 100,
+        min = 0
+        )
+        
     filter_mode = EnumProperty(
         name = "Filter Mode",
         items = [('None', "Opaque", ""),
@@ -40,11 +49,13 @@ class MaterialLayerSettings(bpy.types.PropertyGroup):
                  ('Modulate2x', "Modulate 2X", "")],
         default = 'None'
         )
+        
     unshaded = BoolProperty(
         name = "Unshaded",
         description = "Whether or not to apply shadows to this layer.",
         default = False
         )
+        
     two_sided = BoolProperty(
         name = "Two Sided",
         description = "Whether or not to render backfaces.",
@@ -92,7 +103,7 @@ class MaterialLayerSettings(bpy.types.PropertyGroup):
 class MATERIAL_UL_mdl_layer(bpy.types.UIList):
     
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-        icons = {'0' : 'IMAGE_DATA', '1' : 'TEXTURE', '2' : 'POTATO', '11' : 'FACESEL', 'Tree' : 'MESH_CONE'}
+        icons = {'0' : 'IMAGE_DATA', '1' : 'TEXTURE', '2' : 'POTATO', '11' : 'FACESEL', '36' : 'IMAGE_RGB_ALPHA', 'Tree' : 'MESH_CONE'}
         icon = icons[item.texture_type] if item.texture_type in icons.keys() else icons['Tree']
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             layout.prop(item, "name", text="", emboss=False, icon=icon)
@@ -198,6 +209,8 @@ class CUSTOM_PT_MaterialPanel(bpy.types.Panel):
                 col.prop(active_layer, "texture_type")
                 if active_layer.texture_type == '0': # Image texture
                     col.prop(active_layer, "path")
+                elif active_layer.texture_type == '36':
+                    col.prop(active_layer, "replaceable_id")
                 col.separator()
                 col.prop(active_layer, "filter_mode")
                 if active_layer.filter_mode in {'Blend', 'Transparent', 'AddAlpha'}:
