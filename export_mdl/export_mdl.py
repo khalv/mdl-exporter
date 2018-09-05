@@ -393,7 +393,21 @@ def get_global_seq(fcurve):
                 return int(fcurve.range()[1] * f2ms)
     return -1
     
+def register_global_seq(fcurve, global_seqs, keys=None):
+    if fcurve is None:
+        return
+    if keys != None:
+        for key in keys:
+            sequence = get_global_seq(fcurve[key])
+            if sequence > 0:
+                global_seqs.add(sequence)
+    else:
+        sequence = get_global_seq(fcurve)
+        if sequence > 0:
+            global_seqs.add(sequence)
+            
 def get_parent(obj):
+
     parent = obj.parent
    
     if parent is None:
@@ -417,7 +431,14 @@ def get_parent(obj):
             return "Bone_"+parent.name
             
     return get_parent(parent)
-    
+  
+def write_billboard(fw, billboarded, billboard_lock):
+    for flag, axis in zip(billboard_lock, ('Z', 'Y', 'X')):
+        if flag == True:
+            fw("\tBillboardedLock%s,\n" % axis)
+    if billboarded == True:
+        fw("\tBillboarded,\n")
+  
 def write_anim(curve, name, fw, global_seqs, indent="", no_interp=False, scale=1):
     fw(indent+"%s %d {\n" % (name, len(curve.keyframe_points)))
     
@@ -529,21 +550,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
 
     geosets = {}
     materials = {}
-    # bones = defaultdict(list)
     objects = defaultdict(set)
     geoset_anims = []
     geoset_anim_map = {}
     const_color_mats = set()
     global_seqs = set()
-    textures = []
-    helpers = []
-    attachments = []
-    events = []
-    lights = []
+    
     cameras = []
     
     filename = bpy.path.basename(context.blend_data.filepath)
-   
     
     # obj.show_double_sided
     
@@ -561,22 +576,26 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     for obj in objs:
         parent = get_parent(obj)
         
+        billboarded = False
+        billboard_lock = (False, False, False)
+        if hasattr(obj, "mdl_billboard"):
+            bb = obj.mdl_billboard
+            billboarded = bb.billboarded
+            billboard_lock = (bb.billboard_lock_z, bb.billboard_lock_y, bb.billboard_lock_x) # NOTE: Axes are listed backwards (same as with colors)
+        
         # Animations
         visibility = get_curve(obj, ['hide_render', 'hide_view', '["visibility"]'])
-        if visibility is not None and get_global_seq(visibility) > 0:
-            global_seqs.add(get_global_seq(visibility))
+        register_global_seq(visibility, global_seqs)
             
         anim_loc = get_curves(obj, 'location', (0, 1, 2))
-        if anim_loc is not None and get_global_seq(anim_loc[('location', 0)]) > 0:
-            global_seqs.add(get_global_seq(anim_loc[('location', 0)]))
+        register_global_seq(anim_loc, global_seqs, [('location', 0)])
             
         anim_rot = get_curves(obj, 'rotation_quaternion', (0, 1, 2, 3))
-        if anim_rot is not None and get_global_seq(anim_rot[('rotation_quaternion', 0)]) > 0:
-            global_seqs.add(get_global_seq(anim_rot[('rotation_quaternion', 0)]))
+        register_global_seq(anim_rot, global_seqs, [('rotation_quaternion', 0)])
             
         anim_scale = get_curves(obj, 'scale', (0, 1, 2))
-        if anim_scale is not None and get_global_seq(anim_scale[('scale', 0)]) > 0:
-            global_seqs.add(get_global_seq(anim_scale[('scale', 0)]))
+        if anim_scale is not None:
+            register_global_seq(anim_scale, global_seqs, anim_scale.keys()) # Special case to allow for particle systems to animate width/length individually
             
         is_animated = any((anim_loc, anim_rot, anim_scale))
         
@@ -614,40 +633,40 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fcurves = settings.animation_data.action.fcurves
                     
                     curve = fcurves.find("mdl_particle_sys.emission_rate")
-                    if curve is not None:
-                        psys.emission_rate_anim = curve
+                    psys.emission_rate_anim = curve
+                    register_global_seq(psys.emission_rate_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.speed")
-                    if curve is not None:
-                        psys.speed_anim = curve
+                    psys.speed_anim = curve
+                    register_global_seq(psys.speed_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.life_span")
-                    if curve is not None:
-                        psys.life_span_anim = curve
+                    psys.life_span_anim = curve
+                    register_global_seq(psys.life_span_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.gravity")
-                    if curve is not None:
-                        psys.gravity_anim = curve
+                    psys.gravity_anim = curve
+                    register_global_seq(psys.gravity_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.variation")
-                    if curve is not None:
-                        psys.variation_anim = curve
+                    psys.variation_anim = curve
+                    register_global_seq(psys.variation_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.latitude")
-                    if curve is not None:
-                        psys.latitude_anim = curve
+                    psys.latitude_anim = curve
+                    register_global_seq(psys.latitude_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.longitude")
-                    if curve is not None:
-                        psys.longitude_anim = curve
+                    psys.longitude_anim = curve
+                    register_global_seq(psys.longitude_anim, global_seqs)
                         
                     curve = fcurves.find("mdl_particle_sys.alpha")
-                    if curve is not None:
-                        psys.alpha_anim = curve
+                    psys.alpha_anim = curve
+                    register_global_seq(psys.alpha_anim, global_seqs)
                         
                     curves = get_curves(settings, "mdl_particle_sys.ribbon_color", (0, 1, 2))
-                    if curves is not None:
-                        psys.ribbon_color_anim = curves
+                    psys.ribbon_color_anim = curves
+                    register_global_seq(psys.ribbon_color_anim, global_seqs, [0])
                 
                 if psys.emitter.emitter_type == 'ParticleEmitter':
                     objects['particle'].add(psys)
@@ -669,14 +688,19 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             if 'Box' in obj.name:
                 collider.type = 'Box'
-                min, max = ((-0.5, -0.5, -0.5), (0.5, 0.5, 0.5)) #calc_extents(obj.bound_box)
+                corners = []
+                for corner in ((0.5, 0.5, -0.5), (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (0.5, 0.5, 0.5), (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (-0.5, 0.5, 0.5)):
+                    mat = global_matrix * obj.matrix_world
+                    corners.append(mat.to_quaternion() * Vector(abs(x * obj.empty_draw_size * global_matrix.median_scale) * y for x, y in zip(obj.scale, corner)))
 
-                collider.verts = [global_matrix * obj.world_matrix * Vector(min), global_matrix * obj.world_matrix * Vector(max)] # TODO: World space or relative to pivot??
+                vmin, vmax = calc_extents(corners)
+                
+                collider.verts = [vmin, vmax] # TODO: World space or relative to pivot??
                 objects['collisionshape'].add(collider)
             elif 'Sphere' in obj.name:
                 collider.type = 'Sphere'
                 collider.verts = [global_matrix * Vector(obj.location)]
-                collider.radius = global_matrix.median_scale() * math.sqrt(sum(x * x for x in obj.scale))
+                collider.radius = global_matrix.median_scale * max(abs(x * obj.empty_draw_size) for x in obj.scale)
                 objects['collisionshape'].add(collider)
 
         elif obj.type == 'MESH':
@@ -793,12 +817,10 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 eventtrack = Object(obj.name)
                 eventtrack.pivot = global_matrix * Vector(obj.location)
                 eventtrack.curve = get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
-                if eventtrack.curve is not None and get_global_seq(eventtrack.curve) > 0:
-                    global_seqs.add(get_global_seq(eventtrack.curve))
+                register_global_seq(eventtrack.curve, global_seqs)
                 objects['eventtrack'].add(eventtrack)
                 # events.append({"object" : obj, "eventtrack" : eventtrack})
             elif obj.name.endswith(" Ref"):
-                # attachments.append({"object" : obj, "visibility" : visibility})
                 att = Object(obj.name)
                 att.pivot = global_matrix * Vector(obj.location)
                 att.visibility = visibility
@@ -822,14 +844,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.pivot = global_matrix * Vector(bone.pivot) # Axis conversion
                 datapath = 'pose.bones[\"'+b.name+'\"].%s'
                 bone.anim_loc = get_curves(obj, datapath % 'location', (0, 1, 2))
-                if bone.anim_loc is not None and get_global_seq(bone.anim_loc[('location', 0)]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_loc[('location', 0)]))
+                register_global_seq(bone.anim_loc, global_seqs, [('location', 0)])
+
                 bone.anim_rot = get_curves(obj, datapath % 'rotation_quaternion', (0, 1, 2, 3))
-                if bone.anim_rot is not None and get_global_seq(bone.anim_rot[('rotation_quaternion', 0)]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_rot[('rotation_quaternion', 0)]))
+                register_global_seq(bone.anim_rot, global_seqs, [('rotation_quaternion', 0)])
+
                 bone.anim_scale = get_curves(obj, datapath % 'scale', (0, 1, 2))
-                if bone.anim_scale is not None and get_global_seq(bone.anim_scale[('scale', 0)]) > 0:
-                    global_seqs.add(get_global_seq(bone.anim_scale[('scale', 0)]))
+                register_global_seq(bone.anim_scale, global_seqs, [('scale', 0)])
                 
                 bone.matrix = b.bone.matrix_local
                 objects['bone'].add(bone)
@@ -845,58 +866,37 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
                 light.intensity = light_data.intensity
                 light.intensity_anim = get_curve(obj.data, ['mdl_light.intensity'])
-                if light.intensity_anim is not None and get_global_seq(light.intensity_anim) > 0:
-                    global_seqs.add(get_global_seq(light.intensity_anim))
+                register_global_seq(light.intensity_anim, global_seqs)
                 
                 light.atten_start = light_data.atten_start
                 light.atten_start_anim = get_curve(obj.data, ['mdl_light.atten_start'])
-                if light.atten_start_anim is not None and get_global_seq(light.atten_start_anim) > 0:
-                    global_seqs.add(get_global_seq(light.atten_start_anim))
+                register_global_seq(light.atten_start_anim, global_seqs)
                     
                 light.atten_end = light_data.atten_end
                 light.atten_end_anim = get_curve(obj.data, ['mdl_light.atten_end'])
-                if light.atten_end_anim is not None and get_global_seq(light.atten_end_anim) > 0:
-                    global_seqs.add(get_global_seq(light.atten_end_anim))
+                register_global_seq(light.atten_end_anim, global_seqs)
                 
                 light.color = light_data.color
                 light.color_anim = get_curve(obj.data, ['mdl_light.color'])
-                if light.color_anim is not None and get_global_seq(light.color_anim[0]) > 0:
-                    global_seqs.add(get_global_seq(light.color_anim[0]))
+                register_global_seq(light.color_anim, global_seqs, [0])
                     
                 light.amb_color = light_data.amb_color
                 light.amb_color_anim = get_curve(obj.data, ['mdl_light.amb_color'])
-                if light.amb_color_anim is not None and get_global_seq(light.amb_color_anim[0]) > 0:
-                    global_seqs.add(get_global_seq(light.amb_color_anim[0]))
+                register_global_seq(light.amb_color_anim, global_seqs, [0])
                     
                 light.amb_intensity = light_data.amb_intensity
                 light.amb_intensity_anim = get_curve(obj.data, ['obj.mdl_light.amb_intensity'])
-                if light.amb_intensity_anim is not None and get_global_seq(light.amb_intensity_anim) > 0:
-                    global_seqs.add(get_global_seq(light.amb_intensity_anim))
-                    
-            else:
-                # Legacy / fallback method
-                light.intensity = get_curve(obj, ['energy'])
-                if light.intensity is not None and get_global_seq(light.intensity) > 0:
-                    global_seqs.add(get_global_seq(light.intensity))
-                light.range = get_curve(obj, ['distance'])
-                if light.range is not None and get_global_seq(light.range) > 0:
-                    global_seqs.add(get_global_seq(light.intensity))
-                light.color = get_curves(obj, 'color', (0, 1, 2))
-                if light.color is not None and get_global_seq(light.color[0]) > 0:
-                    global_seqs.add(get_global_seq(light.color[0]))
+                register_global_seq(light.amb_intensity_anim, global_seqs)
                     
             light.visibility = visibility
             objects['light'].add(light)
-            # lights.append({"object" : obj, "visibility" : visibility, "intensity" : intensity, "att_end" : range, "color" : color})
         elif obj.type == 'CAMERA':
             cameras.append(obj)
-            
-    # objects = [*bones.keys(), *[l["object"] for l in lights], *[h["object"] for h in helpers], *[a["object"] for a in attachments], *[e["object"] for e in events]]
     
     mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
     
     # Add default material if no other materials present
-    if len(mdl_materials) == 0:
+    if len(mdl_materials) == 0 and len(geosets) > 0:
         default_mat = Material(0)
         default_mat.layers.append(MaterialLayer())
         mdl_materials.append(default_mat)
@@ -912,8 +912,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
     tvertex_anims = [layer.texture_anim for layer in mdl_layers if layer.texture_anim is not None]
     
-    print(len(tvertex_anims))
-    
     sequences = get_sequences(context.scene)
     if len(sequences) == 0:
         sequences.append(("Stand", 0, 3333)) # Default anim
@@ -928,14 +926,18 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             object_indices[object.name] = index
             objects_all.append(object)
             vertices_all.append(object.pivot)
+            if tag == 'collisionshape':
+                for vert in object.verts:
+                    vertices_all.append(vert)
             index = index+1
     
     index = 0
-    for geoset in geosets.values():
-        geoset_indices[geoset] = index
-        index = index+1
-        for vertex in geoset.vertices:
-            vertices_all.append(vertex[0])
+    if len(geosets):
+        for geoset in geosets.values():
+            geoset_indices[geoset] = index
+            index = index+1
+            for vertex in geoset.vertices:
+                vertices_all.append(vertex[0])
      
     # Account for particle systems when calculating bounds 
     for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
@@ -949,27 +951,29 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     with open(filepath, 'w') as output:
         fw = output.write
         fw("Version {\n\tFormatVersion %d,\n}\n" % mdl_version)
-    
+        # HEADER
         fw("Model \"%s\" {\n" % filename.replace(".blend",""))
-        fw("\tNumGeosets %d,\n" % len(geosets.values()))
+        if len(geosets):
+            fw("\tNumGeosets %d,\n" % len(geosets))
         if len(objects['bone']):
             fw("\tNumBones %d,\n" % len(objects['bone']))
-        if len(attachments):
-            fw("\tNumAttachments %d,\n" % len(attachments))
-        if len(events):
-            fw("\tNumEvents %d,\n" % len(events))
+        if len(objects['attachment']):
+            fw("\tNumAttachments %d,\n" % len(objects['attachment']))
+        if len(objects['eventobject']):
+            fw("\tNumEvents %d,\n" % objects['eventobject'])
         if len(geoset_anims):
             fw("\tNumGeosetAnims %d,\n" % len(geoset_anims))
-        if len(lights):
-            fw("\tNumLights %d,\n" % len(lights))
-        if len(helpers):
-            fw("\tNumHelpers %d,\n" % len(helpers))
+        if len(objects['light']):
+            fw("\tNumLights %d,\n" % len(objects['light']))
+        if len(objects['helper']):
+            fw("\tNumHelpers %d,\n" % len(objects['helper']))
         fw("\tBlendTime %d,\n" % 150)
         fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_min)))
         fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_max)))
         fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(global_extents_min, global_extents_max)))
         fw("}\n")
         
+        # SEQUENCES
         fw("Sequences %d {\n" % len(sequences))
         for (name, start, end) in sequences:
             fw("\tAnim \"%s\" {\n" % name)
@@ -977,6 +981,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("\t}\n")
         fw("}\n")
         
+        # GLOBAL SEQUENCES
         global_seqs = sorted(global_seqs)
         if len(global_seqs):
             fw("GlobalSequences %d {\n" % len(global_seqs))
@@ -984,72 +989,77 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tDuration %d,\n" % sequence)
             fw("}\n")
         
-        fw("Textures %d {\n" % len(textures))
-        for texture in textures:
-            fw("\tBitmap {\n")
-            
-            if texture.startswith("ReplaceableId"):
-                fw("\t\tImage \"\",\n")
-                fw("\t\t%s\n," % texture)
-            else:
-                fw("\t\tImage \"%s\",\n" % texture)
-            # ReplaceableId <int>
-            fw("\t\tWrapHeight,\n")
-            fw("\t\tWrapWidth,\n")
-            fw("\t}\n")
-        fw("}\n")
-        
-        fw("Materials %d {\n" % len(mdl_materials))
-        for material in mdl_materials:
-            fw("\tMaterial {\n")
-            
-            if material.use_const_color is True:
-                fw("\t\tConstantColor,\n")
+        # TEXTURES
+        if len(textures):
+            fw("Textures %d {\n" % len(textures))
+            for texture in textures:
+                fw("\tBitmap {\n")
                 
-            # SortPrimsFarZ,
-            # FullResolution,
-            
-            if material.priority_plane != 0:
-                fw("\t\tPriorityPlane %d,\n" % material.priority_plane)
-            
-            for layer in material.layers:
-                fw("\t\tLayer {\n")
-                fw("\t\t\tFilterMode %s,\n" % layer.filter_mode)
-                if layer.unshaded is True:
-                    fw("\t\t\tUnshaded,\n")
-                    
-                if layer.two_sided is True:
-                    fw("\t\t\tTwoSided,\n")
-                
-                if layer.unfogged is True:
-                    fw("\t\t\tUnfogged,\n")
-                    
-                if layer.texture_anim is not None:
-                    pass
-                    
-                if layer.no_depth_test:
-                    fw("\t\t\tNoDepthTest,\n")
-                    
-                if layer.no_depth_set:
-                    fw("\t\t\tNoDepthSet,\n")
-                    
-                if layer.texture is not None:
-                    fw("\t\t\tstatic TextureID %d,\n" % textures.index(layer.texture))    
+                if texture.startswith("ReplaceableId"):
+                    fw("\t\tImage \"\",\n")
+                    fw("\t\t%s\n," % texture)
                 else:
-                    fw("\t\t\tstatic TextureID 0,\n")  
-                    
-                if layer.texture_anim is not None:
-                    fw("\t\t\tTVertexAnimId %d,\n" % tvertex_anims.index(layer.texture_anim))
-                if layer.alpha_anim is not None:
-                    write_anim(layer.alpha_anim, "Alpha", fw, global_seqs, "\t\t")
-                else:
-                    fw("\t\t\tstatic Alpha %s,\n" % f2s(layer.alpha_value))
-                    
-                fw("\t\t}\n")
-            fw("\t}\n")
-        fw("}\n")
+                    fw("\t\tImage \"%s\",\n" % texture)
+                # ReplaceableId <int>
+                fw("\t\tWrapHeight,\n")
+                fw("\t\tWrapWidth,\n")
+                fw("\t}\n")
+            fw("}\n")
         
-        if (len(tvertex_anims)):
+        # MATERIALS
+        if len(materials):
+            fw("Materials %d {\n" % len(mdl_materials))
+            for material in mdl_materials:
+                fw("\tMaterial {\n")
+                
+                if material.use_const_color is True:
+                    fw("\t\tConstantColor,\n")
+                    
+                # SortPrimsFarZ,
+                # FullResolution,
+                
+                if material.priority_plane != 0:
+                    fw("\t\tPriorityPlane %d,\n" % material.priority_plane)
+                
+                for layer in material.layers:
+                    fw("\t\tLayer {\n")
+                    fw("\t\t\tFilterMode %s,\n" % layer.filter_mode)
+                    if layer.unshaded is True:
+                        fw("\t\t\tUnshaded,\n")
+                        
+                    if layer.two_sided is True:
+                        fw("\t\t\tTwoSided,\n")
+                    
+                    if layer.unfogged is True:
+                        fw("\t\t\tUnfogged,\n")
+                        
+                    if layer.texture_anim is not None:
+                        pass
+                        
+                    if layer.no_depth_test:
+                        fw("\t\t\tNoDepthTest,\n")
+                        
+                    if layer.no_depth_set:
+                        fw("\t\t\tNoDepthSet,\n")
+                        
+                    if layer.texture is not None:
+                        fw("\t\t\tstatic TextureID %d,\n" % textures.index(layer.texture))    
+                    else:
+                        fw("\t\t\tstatic TextureID 0,\n")  
+                        
+                    if layer.texture_anim is not None:
+                        fw("\t\t\tTVertexAnimId %d,\n" % tvertex_anims.index(layer.texture_anim))
+                    if layer.alpha_anim is not None:
+                        write_anim(layer.alpha_anim, "Alpha", fw, global_seqs, "\t\t")
+                    else:
+                        fw("\t\t\tstatic Alpha %s,\n" % f2s(layer.alpha_value))
+                        
+                    fw("\t\t}\n")
+                fw("\t}\n")
+            fw("}\n")
+        
+        # TEXTURE ANIMATIONS
+        if len(tvertex_anims):
             fw("TextureAnims %d {\n" % len(tvertex_anims))
             for uv_anim in tvertex_anims:
                 fw("\tTVertexAnim {\n")
@@ -1065,391 +1075,420 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\t}\n")
             fw("}\n")
         
-        for i, geoset in enumerate(geosets.values()):
-            # Geoset start
-            fw("Geoset {\n")
-            # Vertices
-            fw("\tVertices %d {\n" % len(geoset.vertices))
-            for vertex in geoset.vertices:
-                fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, vertex[0])))
-            fw("\t}\n")
-            # Normals
-            fw("\tNormals %d {\n" % len(geoset.vertices))
-            for normal in geoset.vertices:
-                fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, normal[1])))
-            fw("\t}\n")
-            
-            # TVertices
-            fw("\tTVertices %d {\n" % len(geoset.vertices))
-            for tvertex in geoset.vertices:
-                fw("\t\t{%s, %s},\n" % tuple(map(f2s, tvertex[2])))
-            fw("\t}\n")
-            
-            # VertexGroups
-            fw("\tVertexGroup {\n")
-            for vertgroup in geoset.vertices:
-                fw("\t\t%d,\n" % vertgroup[3])
-            fw("\t}\n")
-            
-            # Faces
-            fw("\tFaces %d %d {\n" % (len(geoset.triangles), len(geoset.triangles) * 3))
-            fw("\t\tTriangles {\n")
-            for triangle in geoset.triangles:
-                fw("\t\t\t{%d, %d, %d},\n" % triangle[:])
+        # GEOSETS
+        if len(geosets):
+            for i, geoset in enumerate(geosets.values()):
+                fw("Geoset {\n")
+                # Vertices
+                fw("\tVertices %d {\n" % len(geoset.vertices))
+                for vertex in geoset.vertices:
+                    fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, vertex[0])))
+                fw("\t}\n")
+                # Normals
+                fw("\tNormals %d {\n" % len(geoset.vertices))
+                for normal in geoset.vertices:
+                    fw("\t\t{%s, %s, %s},\n" % tuple(map(f2s, normal[1])))
+                fw("\t}\n")
                 
-            fw("\t\t}\n")
-            fw("\t}\n")
+                # TVertices
+                fw("\tTVertices %d {\n" % len(geoset.vertices))
+                for tvertex in geoset.vertices:
+                    fw("\t\t{%s, %s},\n" % tuple(map(f2s, tvertex[2])))
+                fw("\t}\n")
+                
+                # VertexGroups
+                fw("\tVertexGroup {\n")
+                for vertgroup in geoset.vertices:
+                    fw("\t\t%d,\n" % vertgroup[3])
+                fw("\t}\n")
+                
+                # Faces
+                fw("\tFaces %d %d {\n" % (len(geoset.triangles), len(geoset.triangles) * 3))
+                fw("\t\tTriangles {\n")
+                for triangle in geoset.triangles:
+                    fw("\t\t\t{%d, %d, %d},\n" % triangle[:])
+                    
+                fw("\t\t}\n")
+                fw("\t}\n")
+                
+                fw("\tGroups %d %d {\n" % (len(geoset.matrices), sum(len(mtrx) for mtrx in geoset.matrices)))         
+                for matrix in geoset.matrices:
+                    fw("\t\tMatrices {%s},\n" % ','.join(str(object_indices[g]) for g in matrix))
+                fw("\t}\n")
+                
+                fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.min_extent)))
+                fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.max_extent)))
+                fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(geoset.min_extent, geoset.max_extent)))
+                fw("\tMaterialID %d,\n" % i) # FIXME
+
+                fw("}\n")
             
-            fw("\tGroups %d %d {\n" % (len(geoset.matrices), sum(len(mtrx) for mtrx in geoset.matrices)))         
-            for matrix in geoset.matrices:
-                fw("\t\tMatrices {%s},\n" % ','.join(str(object_indices[g]) for g in matrix))
-            fw("\t}\n")
-            
-            fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.min_extent)))
-            fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.max_extent)))
-            fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(geoset.min_extent, geoset.max_extent)))
-            fw("\tMaterialID %d,\n" % i) # FIXME
-            
-            # Geoset end
+        # GEOSET ANIMS
+        if len(geoset_anims):
+            for anim in geoset_anims:
+                fw("GeosetAnim {\n")
+                alpha = anim["visibility"]
+                vertexcolor = anim["color"]
+                if alpha is not None:
+                    write_anim(alpha, "Alpha", fw, global_seqs, "\t", True)
+                else: 
+                    fw("\tstatic Alpha 1.0,\n")
+                if vertexcolor is not None:
+                    write_anim_vec(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
             fw("}\n")
             
-            if len(geoset_anims):
-                for anim in geoset_anims:
-                    fw("GeosetAnim {\n")
-                    alpha = anim["visibility"]
-                    vertexcolor = anim["color"]
-                    if alpha is not None:
-                        write_anim(alpha, "Alpha", fw, global_seqs, "\t", True)
-                    else: 
-                        fw("\tstatic Alpha 1.0,\n")
-                    if vertexcolor is not None:
-                        write_anim_vec(vertexcolor, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
-                    fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
-                fw("}\n")
+        # BONES
+        for bone in objects['bone']:
+            name = bone.name.replace('.', '_')
+            if not name.lower().startswith("bone"):
+                name = "Bone_"+name
+                
+            fw("Bone \"%s\" {\n" % name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[bone.name])
+            if bone.parent is not None:
+                fw("\tParent %d,\n" % object_indices[bone.parent])
             
-            for bone in objects['bone']:
-                name = bone.name.replace('.', '_')
-                if not name.lower().startswith("bone"):
-                    name = "Bone_"+name
-                    
-                fw("Bone \"%s\" {\n" % name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[bone.name])
-                if bone.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[bone.parent])
-                
-                children = [geoset for g in geosets.values() if bone.name in g.matrices]
-                if len(children) == 1:
-                    fw("\tGeosetId %d,\n" % geoset_indices[children[0]])
-                else:
-                    fw("\tGeosetId -1,\n")
-                    
-                if bone.name in geoset_anim_map.keys():
-                    fw("\tGeosetAnimId %d,\n" % geoset_anims.index(geoset_anim_map[bone.name]))
-                else:
-                    fw("\tGeosetAnimId None,\n")
-                    
-                if bone.anim_loc is not None:
-                    write_anim_vec(bone.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * bone.matrix)
-                    
-                if bone.anim_rot is not None:
-                    write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
-                    
-                if bone.anim_scale is not None:
-                    write_anim_vec(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
-                    
-                # Visibility
-                fw("}\n")
+            write_billboard(fw, billboarded, billboard_lock)
             
-            for light in objects['light']:
-                l = light.object
-                fw("Light \"%s\" {\n" % light.name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[light.name])
-                    
-                if light.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[light.parent])
-                   
-                fw("\t%s,\n" % light.type)
+            children = [geoset for g in geosets.values() if bone.name in g.matrices]
+            if len(children) == 1:
+                fw("\tGeosetId %d,\n" % geoset_indices[children[0]])
+            else:
+                fw("\tGeosetId -1,\n")
                 
-                if light.atten_start_anim is not None:
-                    write_anim(light.atten_start_anim, "AttenuationStart", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic AttenuationStart %s,\n" % f2s(light.atten_start))
-                    
-                if light.atten_end_anim is not None:
-                    write_anim(light.atten_end_anim, "AttenuationEnd", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic AttenuationEnd %s,\n" % f2s(light.atten_end)) #TODO: Add animation support
-                   
-                if light.color_anim is not None:
-                    write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix())
-                else:
-                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, light.color)))
-                   
-                if light.intensity_anim is not None:
-                    write_anim(light.intensity_anim, "Intensity", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Intensity %s,\n" % f2s(light.intensity))
-                   
-                if light.amb_color_anim is not None:
-                    write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix())
-                else:
-                    fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, light.amb_color)))
-                    
-                if light.amb_intensity_anim is not None:
-                    write_anim(light.amb_intensity_anim, "AmbIntensity", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic AmbIntensity %s,\n" % f2s(light.amb_intensity))
-                    
-                if light.visibility is not None:
-                    write_anim(light.visibility, "Visibility", fw, global_seqs, "\t", True)
-                fw("}\n")
+            if bone.name in geoset_anim_map.keys():
+                fw("\tGeosetAnimId %d,\n" % geoset_anims.index(geoset_anim_map[bone.name]))
+            else:
+                fw("\tGeosetAnimId None,\n")
+                
+            if bone.anim_loc is not None:
+                write_anim_vec(bone.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * bone.matrix)
+                
+            if bone.anim_rot is not None:
+                write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
+                
+            if bone.anim_scale is not None:
+                write_anim_vec(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
+                
+            # Visibility
+            fw("}\n")
+            
+        # LIGHTS
+        for light in objects['light']:
+            l = light.object
+            fw("Light \"%s\" {\n" % light.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[light.name])
+                
+            if light.parent is not None:
+                fw("\tParent %d,\n" % object_indices[light.parent])
+               
+            write_billboard(fw, billboarded, billboard_lock)
+            
+            fw("\t%s,\n" % light.type)
+            
+            if light.atten_start_anim is not None:
+                write_anim(light.atten_start_anim, "AttenuationStart", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic AttenuationStart %s,\n" % f2s(light.atten_start))
+                
+            if light.atten_end_anim is not None:
+                write_anim(light.atten_end_anim, "AttenuationEnd", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic AttenuationEnd %s,\n" % f2s(light.atten_end)) #TODO: Add animation support
+               
+            if light.color_anim is not None:
+                write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix())
+            else:
+                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, light.color)))
+               
+            if light.intensity_anim is not None:
+                write_anim(light.intensity_anim, "Intensity", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Intensity %s,\n" % f2s(light.intensity))
+               
+            if light.amb_color_anim is not None:
+                write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix())
+            else:
+                fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, light.amb_color)))
+                
+            if light.amb_intensity_anim is not None:
+                write_anim(light.amb_intensity_anim, "AmbIntensity", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic AmbIntensity %s,\n" % f2s(light.amb_intensity))
+                
+            if light.visibility is not None:
+                write_anim(light.visibility, "Visibility", fw, global_seqs, "\t", True)
+            fw("}\n")
                 
                 
-            # TODO: Helpers
-                
+        # TODO: HELPERS
+        for helper in objects['helper']:
+            pass
+
+            
+        # ATTACHMENT POINTS   
+        if len(objects['attachment']):
             for i, attachment in enumerate(objects['attachment']):
                 fw("Attachment \"%s\" {\n" % attachment.name)
+                
                 if len(object_indices) > 1:
                     fw("\tObjectId %d,\n" % object_indices[attachment.name])
+                    
                 if attachment.parent is not None:
                     fw("\tParent %d,\n" % object_indices[attachment.parent])
+                    
+                write_billboard(fw, billboarded, billboard_lock)
+                
                 fw("\tAttachmentID %d,\n" % i)
+                
                 visibility = attachment.visibility
                 if visibility is not None:
                     write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
                 fw("}\n")
             
+        # PIVOT POINTS
+        if len(objects_all):
             fw("PivotPoints %d {\n" % len(objects_all))
             for object in objects_all:
                 fw("\t{%s, %s, %s},\n" % tuple(map(f2s, object.pivot)))
             fw("}\n")
             
-            for psys in objects['particle']:
-                emitter = psys.emitter
-                fw("ParticleEmitter \"%s\" {\n" % psys.name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[psys.name])
-                if psys.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[psys.parent])
-                    
-                fw("\tEmitterUsesMDL,\n")
+        # MODEL EMITTERS
+        for psys in objects['particle']:
+            emitter = psys.emitter
+            fw("ParticleEmitter \"%s\" {\n" % psys.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[psys.name])
+            if psys.parent is not None:
+                fw("\tParent %d,\n" % object_indices[psys.parent])
                 
-                if psys.emission_rate_anim is not None:
-                    write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+            fw("\tEmitterUsesMDL,\n")
+            
+            if psys.emission_rate_anim is not None:
+                write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
+            
+            if psys.gravity_anim is not None:
+                write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
                 
-                if psys.gravity_anim is not None:
-                    write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
-                    
-                if psys.longitude_anim is not None:
-                    write_anim(psys.longitude_anim, "Longitude", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Longitude %s,\n" % f2s(rnd(emitter.latitude)))
+            if psys.longitude_anim is not None:
+                write_anim(psys.longitude_anim, "Longitude", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Longitude %s,\n" % f2s(rnd(emitter.latitude)))
+            
+            if psys.latitude_anim is not None:
+                write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
                 
-                if psys.latitude_anim is not None:
-                    write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
-                    
-                visibility = psys.visibility
-                if visibility is not None:
-                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
-                fw("\tParticle {\n")
-                
-                if psys.life_span_anim is not None:
-                    write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t\t")
-                else:
-                    fw("\t\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
-                  
-                if psys.speed_anim is not None:
-                    write_anim(psys.speed_anim, "InitVelocity", fw, global_seqs, "\t\t")
-                else:
-                    fw("\t\tstatic InitVelocity %s,\n" % f2s(rnd(emitter.speed)))
+            visibility = psys.visibility
+            if visibility is not None:
+                write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+            fw("\tParticle {\n")
+            
+            if psys.life_span_anim is not None:
+                write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t\t")
+            else:
+                fw("\t\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+              
+            if psys.speed_anim is not None:
+                write_anim(psys.speed_anim, "InitVelocity", fw, global_seqs, "\t\t")
+            else:
+                fw("\t\tstatic InitVelocity %s,\n" % f2s(rnd(emitter.speed)))
 
-                fw("\t\tPath \"%s\",\n" % emitter.model_path)
-                fw("\t}\n")
-                fw("}\n")
+            fw("\t\tPath \"%s\",\n" % emitter.model_path)
+            fw("\t}\n")
+            fw("}\n")
+         
+        # PARTICLE EMITTERS
+        for psys in objects['particle2']:
+            emitter = psys.emitter
+            fw("ParticleEmitter2 \"%s\" {\n" % psys.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[psys.name])
+            if psys.parent is not None:
+                fw("\tParent %d,\n" % object_indices[psys.parent])
                 
-            for psys in objects['particle2']:
-                emitter = psys.emitter
-                fw("ParticleEmitter2 \"%s\" {\n" % psys.name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[psys.name])
-                if psys.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[psys.parent])
-                    
-                if emitter.sort_far_z:
-                    fw("\tSortPrimsFarZ,\n")
-                    
-                if emitter.unshaded:
-                    fw("\tUnshaded,\n")
-                    
-                if emitter.line_emitter:
-                    fw("\tLineEmitter,\n")
+            if emitter.sort_far_z:
+                fw("\tSortPrimsFarZ,\n")
                 
-                if emitter.unfogged:
-                    fw("\tUnfogged,\n")
-                    
-                if emitter.model_space:
-                    fw("\tModelSpace,\n")
-                    
-                if emitter.xy_quad:
-                    fw("\tXYQuad,\n")
-                    
-                if psys.speed_anim is not None:
-                    write_anim(psys.speed_anim, "Speed", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Speed %s,\n" % f2s(rnd(emitter.speed)))
-                    
-                if psys.variation_anim is not None:
-                    write_anim(psys.variation_anim, "Variation", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Variation %s,\n" % f2s(rnd(emitter.variation)))
-                    
-                if psys.latitude_anim is not None:
-                    write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
-                    
-                if psys.gravity_anim is not None:
-                    write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
-                    
-                visibility = psys.visibility
-                if visibility is not None:
-                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
-                    
-                if psys.life_span_anim is not None:
-                    write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t")
-                else:
-                    fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
-                    
-                if psys.emission_rate_anim is not None:
-                    write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
-                    
-                if psys.scale_anim is not None:
-                    write_anim(psys.scale_anim[('scale', 0)], "Width", fw, global_seqs, "\t")
-                    write_anim(psys.scale_anim[('scale', 1)], "Length", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
-                    fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
-                    
-                fw("\t%s,\n" % emitter.filter_mode)
-                fw("\tRows %d,\n" % emitter.rows)
-                fw("\tColumns %d,\n" % emitter.cols)
-                if emitter.head and emitter.tail:
-                    fw("\tBoth,\n")
-                elif emitter.tail:
-                    fw("\tTail,\n")
-                else:
-                    fw("\tHead,\n")
-                    
-                fw("\tTailLength %s,\n" % f2s(rnd(emitter.tail_length)))
-                fw("\tTime %s,\n" % f2s(rnd(emitter.time)))
-                fw("\tSegmentColor {\n")
-                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.start_color))))
-                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.mid_color))))
-                fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.end_color))))
-                fw("\t},\n")
-                alpha = (emitter.start_alpha, emitter.mid_alpha, emitter.end_alpha)
-                fw("\tAlpha {%s, %s, %s},\n" % tuple(map(f2s, alpha)))
-                particle_scales = (emitter.start_scale, emitter.mid_scale, emitter.end_scale)
-                fw("\tParticleScaling {%s, %s, %s},\n" % tuple(map(f2s, particle_scales)))
-                fw("\tLifeSpanUVAnim {%d, %d, %d},\n" % (emitter.head_life_start, emitter.head_life_end, emitter.head_life_repeat))
-                fw("\tDecayUVAnim {%d, %d, %d},\n" % (emitter.head_decay_start, emitter.head_decay_end, emitter.head_decay_repeat))
-                fw("\tTailUVAnim {%d, %d, %d},\n" % (emitter.tail_life_start, emitter.tail_life_end, emitter.tail_life_repeat))
-                fw("\tTailDecayUVAnim {%d, %d, %d},\n" % (emitter.tail_decay_start, emitter.tail_decay_end, emitter.tail_decay_repeat))
-                fw("\tTextureID %d,\n" % textures.index(emitter.texture_path))
-                if emitter.priority_plane != 0:
-                    fw("\tPriorityPlane %d,\n" % emitter.priority_plane)
-                fw("}\n")
+            if emitter.unshaded:
+                fw("\tUnshaded,\n")
                 
-            for psys in objects['ribbon']:
-                emitter = psys.emitter
-                fw("RibbonEmitter \"%s\" {\n" % psys.name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[psys.name])
-                if psys.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[psys.parent])
-                    
-                fw("\tstatic HeightAbove %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
-                fw("\tstatic HeightBelow %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
+            if emitter.line_emitter:
+                fw("\tLineEmitter,\n")
+            
+            if emitter.unfogged:
+                fw("\tUnfogged,\n")
                 
-                if psys.alpha_anim is not None:
-                    write_anim(psys.alpha_anim, "Width", fw, global_seqs, "\t")
-                else:
-                    fw("\tstatic Alpha %s,\n" % emitter.alpha)
+            if emitter.model_space:
+                fw("\tModelSpace,\n")
                 
-                if psys.ribbon_color_anim is not None:
-                    write_anim_vec(psys.ribbon_color_anim, 'Color', 'ribbon_color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
-                else:
-                    fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
-                    
-                fw("\tstatic TextureSlot %d,\n" % textures.index(emitter.texture_path))
-                visibility = psys.visibility
-                if visibility is not None:
-                    write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
-                fw("\tEmissionRate %d,\n" % emitter.emission_rate)
+            if emitter.xy_quad:
+                fw("\tXYQuad,\n")
+                
+            if psys.speed_anim is not None:
+                write_anim(psys.speed_anim, "Speed", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Speed %s,\n" % f2s(rnd(emitter.speed)))
+                
+            if psys.variation_anim is not None:
+                write_anim(psys.variation_anim, "Variation", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Variation %s,\n" % f2s(rnd(emitter.variation)))
+                
+            if psys.latitude_anim is not None:
+                write_anim(psys.latitude_anim, "Latitude", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Latitude %s,\n" % f2s(rnd(emitter.latitude)))
+                
+            if psys.gravity_anim is not None:
+                write_anim(psys.gravity_anim, "Gravity", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Gravity %s,\n" % f2s(rnd(emitter.gravity)))
+                
+            visibility = psys.visibility
+            if visibility is not None:
+                write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+                
+            if psys.life_span_anim is not None:
+                write_anim(psys.life_span_anim, "LifeSpan", fw, global_seqs, "\t")
+            else:
                 fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
-                fw("\tGravity %s,\n" % f2s(rnd(emitter.gravity)))
-                fw("\tRows %d,\n" % emitter.rows)
-                fw("\tColumns %d,\n" % emitter.cols)
-                for material in mdl_materials:
-                    if material.name == emitter.ribbon_material.name:
-                        fw("\tMaterialID %d,\n" % mdl_materials.index(material))
-                        break
-                fw("}\n")
                 
-            for camera in cameras:
-                fw("Camera \"%s\" {\n" % camera.name)
-                position = global_matrix * Vector(camera.location)
-                fw("\tPosition {%s, %s, %s},\n" % tuple(map(f2s, position)))
-                fw("\tFieldOfView %f,\n" % camera.data.angle)
-                fw("\tFarClip %f,\n" % (camera.data.clip_end*10))
-                fw("\tNearClip %f,\n" % (camera.data.clip_start*10))
-                matrix = global_matrix * camera.matrix_world
-                target = position + matrix.to_quaternion() * Vector((0.0, 0.0, -1.0))
-                fw("\tTarget {\n\t\tPosition {%s, %s, %s},\n\t}\n" % tuple(map(f2s, target)))
-                fw("}\n")
+            if psys.emission_rate_anim is not None:
+                write_anim(psys.emission_rate_anim, "EmissionRate", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
                 
-            for event in objects['eventobject']:
-                fw("EventObject \"%s\" {\n" % event.name)
-                if len(object_indices) > 1:
-                    fw("\tObjectId %d,\n" % object_indices[event.name])
-                if event.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[event.parent])
-                eventtrack = event.curve
-                if eventtrack is not None:
-                    fw("\tEventTrack %d {\n" % len(eventtrack.keyframe_points))
-                    for keyframe in eventtrack.keyframe_points:
-                        fw("\t\t%d,\n" % (f2ms * int(keyframe.co[0])))
-                fw("}\n")
+            if psys.scale_anim is not None and ('scale', 0) in psys.scale_anim.keys():
+                write_anim(psys.scale_anim[('scale', 0)], "Width", fw, global_seqs, "\t", scale=psys.dimensions[0])
+            else:
+                fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
                 
-            for collider in objects['collisionshape']:
-                fw("CollisionShape \"s\" {\n" % collider.name)
-                fw("\tObjectId %d,\n" % object_indices[collider.name])
-                if collider.parent is not None:
-                    fw("\tParent %d,\n" % object_indices[collider.parent])
-                if collider.type == 'Box':
-                    fw("\tBox,\n")
-                else:
-                    fw("\tSphere,\n")
-                    
-                fw("\tVertices %d {\n" % len(collider.verts))
-                for vert in collider.verts:
-                    fw("\t\t{%s, %s, %s},\n" % (f2s(rnd(x)) for x in vert))
-                fw("\t}\n")
-                if collider.type == 'Sphere':
-                    fw("\tBoundsRadius %s,\n" % f2s(rnd(collider.radius)))
-                fw("}\n")
+            if psys.scale_anim is not None and ('scale', 1) in psys.scale_anim.keys():
+                write_anim(psys.scale_anim[('scale', 1)], "Length", fw, global_seqs, "\t", scale=psys.dimensions[1])
+            else:
+                fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
+                
+            fw("\t%s,\n" % emitter.filter_mode)
+            fw("\tRows %d,\n" % emitter.rows)
+            fw("\tColumns %d,\n" % emitter.cols)
+            if emitter.head and emitter.tail:
+                fw("\tBoth,\n")
+            elif emitter.tail:
+                fw("\tTail,\n")
+            else:
+                fw("\tHead,\n")
+                
+            fw("\tTailLength %s,\n" % f2s(rnd(emitter.tail_length)))
+            fw("\tTime %s,\n" % f2s(rnd(emitter.time)))
+            fw("\tSegmentColor {\n")
+            fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.start_color))))
+            fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.mid_color))))
+            fw("\t\tColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.end_color))))
+            fw("\t},\n")
+            alpha = (emitter.start_alpha, emitter.mid_alpha, emitter.end_alpha)
+            fw("\tAlpha {%s, %s, %s},\n" % tuple(map(f2s, alpha)))
+            particle_scales = (emitter.start_scale, emitter.mid_scale, emitter.end_scale)
+            fw("\tParticleScaling {%s, %s, %s},\n" % tuple(map(f2s, particle_scales)))
+            fw("\tLifeSpanUVAnim {%d, %d, %d},\n" % (emitter.head_life_start, emitter.head_life_end, emitter.head_life_repeat))
+            fw("\tDecayUVAnim {%d, %d, %d},\n" % (emitter.head_decay_start, emitter.head_decay_end, emitter.head_decay_repeat))
+            fw("\tTailUVAnim {%d, %d, %d},\n" % (emitter.tail_life_start, emitter.tail_life_end, emitter.tail_life_repeat))
+            fw("\tTailDecayUVAnim {%d, %d, %d},\n" % (emitter.tail_decay_start, emitter.tail_decay_end, emitter.tail_decay_repeat))
+            fw("\tTextureID %d,\n" % textures.index(emitter.texture_path))
+            if emitter.priority_plane != 0:
+                fw("\tPriorityPlane %d,\n" % emitter.priority_plane)
+            fw("}\n")
+           
+        # RIBBON EMITTERS
+        for psys in objects['ribbon']:
+            emitter = psys.emitter
+            fw("RibbonEmitter \"%s\" {\n" % psys.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[psys.name])
+            if psys.parent is not None:
+                fw("\tParent %d,\n" % object_indices[psys.parent])
+                
+            fw("\tstatic HeightAbove %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
+            fw("\tstatic HeightBelow %s,\n" % f2s(rnd(psys.dimensions[0]/2)))
+            
+            if psys.alpha_anim is not None:
+                write_anim(psys.alpha_anim, "Width", fw, global_seqs, "\t")
+            else:
+                fw("\tstatic Alpha %s,\n" % emitter.alpha)
+            
+            if psys.ribbon_color_anim is not None:
+                write_anim_vec(psys.ribbon_color_anim, 'Color', 'ribbon_color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+            else:
+                fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
+                
+            fw("\tstatic TextureSlot %d,\n" % textures.index(emitter.texture_path))
+            visibility = psys.visibility
+            if visibility is not None:
+                write_anim(visibility, "Visibility", fw, global_seqs, "\t", True)
+            fw("\tEmissionRate %d,\n" % emitter.emission_rate)
+            fw("\tLifeSpan %s,\n" % f2s(rnd(emitter.life_span)))
+            fw("\tGravity %s,\n" % f2s(rnd(emitter.gravity)))
+            fw("\tRows %d,\n" % emitter.rows)
+            fw("\tColumns %d,\n" % emitter.cols)
+            for material in mdl_materials:
+                if material.name == emitter.ribbon_material.name:
+                    fw("\tMaterialID %d,\n" % mdl_materials.index(material))
+                    break
+            fw("}\n")
+            
+        # CAMERAS    
+        for camera in cameras:
+            fw("Camera \"%s\" {\n" % camera.name)
+            position = global_matrix * Vector(camera.location)
+            fw("\tPosition {%s, %s, %s},\n" % tuple(map(f2s, position)))
+            fw("\tFieldOfView %f,\n" % camera.data.angle)
+            fw("\tFarClip %f,\n" % (camera.data.clip_end*10))
+            fw("\tNearClip %f,\n" % (camera.data.clip_start*10))
+            matrix = global_matrix * camera.matrix_world
+            target = position + matrix.to_quaternion() * Vector((0.0, 0.0, -1.0)) # Target is just a point in front of the camera
+            fw("\tTarget {\n\t\tPosition {%s, %s, %s},\n\t}\n" % tuple(map(f2s, target)))
+            fw("}\n")
+         
+        # EVENT OBJECTS
+        for event in objects['eventobject']:
+            fw("EventObject \"%s\" {\n" % event.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[event.name])
+            if event.parent is not None:
+                fw("\tParent %d,\n" % object_indices[event.parent])
+            eventtrack = event.curve
+            if eventtrack is not None:
+                fw("\tEventTrack %d {\n" % len(eventtrack.keyframe_points))
+                for keyframe in eventtrack.keyframe_points:
+                    fw("\t\t%d,\n" % (f2ms * int(keyframe.co[0])))
+            fw("}\n")
+         
+        # COLLISION SHAPES
+        for collider in objects['collisionshape']:
+            fw("CollisionShape \"%s\" {\n" % collider.name)
+            fw("\tObjectId %d,\n" % object_indices[collider.name])
+            if collider.parent is not None:
+                fw("\tParent %d,\n" % object_indices[collider.parent])
+            if collider.type == 'Box':
+                fw("\tBox,\n")
+            else:
+                fw("\tSphere,\n")
+                
+            fw("\tVertices %d {\n" % len(collider.verts))
+            for vert in collider.verts:
+                fw("\t\t{%s, %s, %s},\n" % tuple(f2s(rnd(x)) for x in vert))
+            fw("\t}\n")
+            if collider.type == 'Sphere':
+                fw("\tBoundsRadius %s,\n" % f2s(rnd(collider.radius)))
+            fw("}\n")
                 
                 
     

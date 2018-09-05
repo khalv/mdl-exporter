@@ -1,6 +1,17 @@
 import bpy
 import os
 
+from bpy.props import (
+        FloatProperty,
+        IntProperty,
+        EnumProperty,
+        BoolProperty,
+        StringProperty,
+        FloatVectorProperty,
+        IntVectorProperty,
+        PointerProperty
+        )
+
 class EventTypeData:
 
     def __init__(self):
@@ -112,7 +123,7 @@ def get_event_items(self, context):
     return event_data.enums[self.event_type]
         
 class EventPropertyGroup(bpy.types.PropertyGroup):
-    event_type =    bpy.props.EnumProperty(
+    event_type = EnumProperty(
                         name = "Event Type",
                         items = [('SND', "Sound", ""),
                                  ('FTP', "Footprint", ""),
@@ -123,11 +134,11 @@ class EventPropertyGroup(bpy.types.PropertyGroup):
                         update = update_event_type
                         )
                             
-    event_id  = bpy.props.EnumProperty(
+    event_id  = EnumProperty(
                     name = "Event ID",
                     items = get_event_items,
                     update = update_event_id
-                    )
+                        )
   
 class CUSTOM_OT_create_eventobject(bpy.types.Operator):
     bl_idname = "object.create_eventobject"
@@ -159,12 +170,12 @@ class CUSTOM_OT_create_col_shape(bpy.types.Operator):
     bl_idname = "object.create_collision_shape"
     bl_label = "Add MDL Collision Shape"
     
-    shape = bpy.props.EnumProperty(
+    shape = EnumProperty(
             name = "Type",
             items = [('SPHERE', "Collision Sphere", ""),
                      ('CUBE', "Collision Box", "")],
             default = 'SPHERE'
-            )
+        )
 
     def invoke(self, context, event):
         wm = context.window_manager
@@ -183,3 +194,67 @@ class CUSTOM_OT_create_col_shape(bpy.types.Operator):
             counter += 1
         
         return {'FINISHED'}
+        
+class BillboardSettings(bpy.types.PropertyGroup):
+    billboarded = BoolProperty(
+        name = "Billboarded",
+        description = "If true, this object will always face the camera.",
+        default = False
+        )
+    billboard_lock_x = BoolProperty(
+        name = "Billboard Lock X",
+        description = "Limits billboarding around the X axis.",
+        default = False,
+        )
+    billboard_lock_y = BoolProperty(
+        name = "Billboard Lock Y",
+        description = "Limits billboarding around the Y axis.",
+        default = False
+        )
+    billboard_lock_z = BoolProperty(
+        name = "Billboard Lock Z",
+        description = "Limits billboarding around the Z axis.",
+        default = False
+        )
+        
+class CUSTOM_PT_BillboardPanel(bpy.types.Panel):  
+    """Displays billboard settings in the Object panel"""
+    bl_idname = "OBJECT_PT_billboard_panel"
+    bl_label = "MDL Billboard Options"
+    bl_region_type = 'WINDOW'
+    bl_space_type = 'PROPERTIES'
+    bl_context = 'object'
+    
+    @classmethod
+    def register(cls):
+        bpy.types.Object.mdl_billboard = PointerProperty(type=BillboardSettings)
+       
+    @classmethod
+    def unregister(cls):
+        del bpy.types.Object.mdl_billboard
+                    
+    @classmethod
+    def poll(self,context):
+        obj = context.active_object
+        
+        if obj is None:
+            return False
+            
+        if obj.type == 'EMPTY' and obj.name.lower().startswith("bone"):
+            return True
+            
+        if obj.type == 'LAMP':
+            return True
+            
+        if obj.name.endswith(" Ref"):
+            return True
+                
+        return False
+
+    def draw(self, context):
+        layout = self.layout
+        data = context.active_object.mdl_billboard
+        layout.prop(data, "billboarded")
+        layout.prop(data, "billboard_lock_x")
+        layout.prop(data, "billboard_lock_y")
+        layout.prop(data, "billboard_lock_z")
