@@ -6,12 +6,6 @@ from mathutils import Vector, Matrix, Quaternion
 from operator import itemgetter
 from collections import defaultdict
 
-# -- Roadmap -- #
-# Particle systems
-# ------------- #
-
-
-
 # -- Object types -- #
 # Bone
 # Light
@@ -455,9 +449,10 @@ def register_global_seq(fcurve, global_seqs, keys=None):
         return
     if keys != None:
         for key in keys:
-            sequence = get_global_seq(fcurve[key])
-            if sequence > 0:
-                global_seqs.add(sequence)
+            if key in fcurve.keys():
+                sequence = get_global_seq(fcurve[key])
+                if sequence > 0:
+                    global_seqs.add(sequence)
     else:
         sequence = get_global_seq(fcurve)
         if sequence > 0:
@@ -795,6 +790,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
                 bone.matrix = obj.matrix_world
+                bone.billboarded = billboarded
+                bone.billboard_lock = billboard_lock
                 objects['bone'].add(bone)
                 parent = bone.name
             
@@ -863,10 +860,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 if not len(geoset.matrices) and parent is not None:
                     geoset.matrices.append([parent])
                 if any((vertexcolor, vertexcolor_anim, visibility)):
-                    
                     if geoset.geoset_anim is not None:
-                        const_color_mats.add(geoset.mat_name)
-                        
+                        register_global_seq(geoset.geoset_anim.alpha_anim, global_seqs)
+                        register_global_seq(geoset.geoset_anim.color_anim, global_seqs, [('color', 0)])
+                        if any((geoset.geoset_anim.color, geoset.geoset_anim.color_anim)):
+                            const_color_mats.add(geoset.mat_name)
                     for bone in itertools.chain.from_iterable(geoset.matrices):
                         geoset_anim_map[bone] = geoset.geoset_anim
                         
@@ -1212,7 +1210,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 elif vertexcolor is not None:
                     fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(vertexcolor[:3]))))
                 fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
-            fw("}\n")
+                fw("}\n")
             
         # BONES
         for bone in objects['bone']:
@@ -1246,7 +1244,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
                 
             if bone.anim_scale is not None:
-                write_anim_vec(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
+                write_anim_vec(bone.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix())
                 
             # Visibility
             fw("}\n")
