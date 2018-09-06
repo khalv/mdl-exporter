@@ -737,6 +737,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
                 bone.matrix = obj.matrix_world
+                bone.billboarded = billboarded
+                bone.billboard_lock = billboard_lock
                 objects['bone'].add(bone)
                 parent = bone.name
             
@@ -806,6 +808,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     
                     geoset_anim = {"color" : vertexcolor, "color anim" : vertexcolor_anim, "visibility" : visibility, "geoset" : geoset}
                     if any((vertexcolor, vertexcolor_anim)):
+                        if vertexcolor_anim is not None:
+                            register_global_seq(vertexcolor_anim, global_seqs, [('color', 0)])
                         const_color_mats.add(geoset.mat_index)
                     if geoset_anim not in geoset_anims:
                         geoset_anims.append(geoset_anim)
@@ -1151,7 +1155,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 elif vertexcolor is not None:
                     fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(vertexcolor[:3]))))
                 fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
-            fw("}\n")
+                fw("}\n")
             
         # BONES
         for bone in objects['bone']:
@@ -1185,7 +1189,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
                 
             if bone.anim_scale is not None:
-                write_anim_vec(bone.anim_scale, 'Scale', 'scale', fw, global_seqs, Matrix())
+                write_anim_vec(bone.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix())
                 
             # Visibility
             fw("}\n")
