@@ -585,8 +585,7 @@ def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, indent =
         if interp == 'Bezier':
             fw(indent+"\t\tInTan { %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in handle_l))
             fw(indent+"\t\tOutTan { %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in handle_r))
-        else:
-            pass # Hermite interpolation not supported by Blender. 
+
     fw(indent+"}\n")
     
 def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
@@ -615,8 +614,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     cameras = []
     
     filename = bpy.path.basename(context.blend_data.filepath)
-    
-    # obj.show_double_sided
     
     objs = []
     scene = context.scene
@@ -658,7 +655,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if get_curves(obj, 'rotation_euler', (0, 1, 2)) is not None:
             operator.report({'WARNING'}, "Euler rotations are not supported!")
         
-        # Particle Systems - NOT YET IMPLEMENTED!
+        # Particle Systems
         if len(obj.particle_systems):
             settings = obj.particle_systems[0].settings
         
@@ -965,7 +962,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         elif obj.type == 'CAMERA':
             cameras.append(obj)
     
+    geosets = list(geosets.values())
     mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
+    mdl_materials = sorted(mdl_materials, key=lambda x: x.priority_plane)
     material_names = [mat.name for mat in mdl_materials]
     
     # Add default material if no other materials present
@@ -978,6 +977,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
 
+    
+    # Degrade bones to helpers if they have no attached geosets
+    for bone in objects['bone']:
+        if not any([g for g in geosets if bone.name in itertools.chain.from_iterable(g.matrices)]):
+            objects['helper'].add(bone)
+            
+    objects['bone'] -= objects['helper']
     # We also need the textures used by emitters
     for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
         if psys.emitter.texture_path not in textures:
@@ -1004,8 +1010,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 for vert in object.verts:
                     vertices_all.append(vert)
             index = index+1
-    
-    geosets = list(geosets.values())
+            
     for geoset in geosets:
         for vertex in geoset.vertices:
             vertices_all.append(vertex[0])
@@ -1073,7 +1078,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\t\t%s,\n" % texture)
                 else:
                     fw("\t\tImage \"%s\",\n" % texture)
-                # ReplaceableId <int>
+
                 fw("\t\tWrapHeight,\n")
                 fw("\t\tWrapWidth,\n")
                 fw("\t}\n")
@@ -1232,7 +1237,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             write_billboard(fw, bone.billboarded, bone.billboard_lock)
             
-            children = [geoset for g in geosets if bone.name in g.matrices]
+            children = [g for g in geosets if bone.name in itertools.chain.from_iterable(g.matrices)]
             if len(children) == 1:
                 fw("\tGeosetId %d,\n" % geosets.index(children[0]))
             else:
@@ -1304,9 +1309,27 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("}\n")
                 
                 
-        # TODO: HELPERS
+        # HELPERS
         for helper in objects['helper']:
-            pass
+            fw("Helper \"%s\" {\n" % helper.name)
+            if len(object_indices) > 1:
+                fw("\tObjectId %d,\n" % object_indices[helper.name])
+                
+            if helper.parent is not None:
+                fw("\tParent %d,\n" % object_indices[helper.parent])
+               
+            write_billboard(fw, helper.billboarded, helper.billboard_lock)
+            
+            if helper.anim_loc is not None:
+                write_anim_vec(helper.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * helper.matrix)
+                
+            if helper.anim_rot is not None:
+                write_anim_rot(helper.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, helper.matrix, global_matrix)
+                
+            if helper.anim_scale is not None:
+                write_anim_vec(helper.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix())
+            
+            fw("}\n")
 
             
         # ATTACHMENT POINTS   
