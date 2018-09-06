@@ -44,10 +44,13 @@ class GeosetAnim:
         self.color = color
         self.color_anim = color_anim
         self.alpha_anim = alpha_anim
+        self.geoset = None
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
             if self.color != other.color and not any((self.color_anim, other.color_anim)): # Color doesn't matter if there is an animation
+                return False
+            if not self.geoset is other.geoset:
                 return False
             if not compare_curves(self.alpha_anim, other.alpha_anim):
                 return False
@@ -77,7 +80,7 @@ class GeosetAnim:
                 value_list.append(get_global_seq(curve))
                 value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in curve.keyframe_points)
 
-        return hash(tuple(self.color, *value_list))
+        return hash(tuple((self.color, *value_list)))
         
 class Geoset:
     def __init__(self):
@@ -92,7 +95,7 @@ class Geoset:
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
-            return self.mat_name == other.mat_name
+            return self.mat_name == other.mat_name and self.geoset_anim is other.geoset_anim
         return NotImplemented
         
     def __ne__(self, other):
@@ -767,7 +770,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if any((vertexcolor, vertexcolor_anim, visibility)):
                 geoset_anim = GeosetAnim(vertexcolor, vertexcolor_anim, visibility)
                 geoset_anim_hash = hash(geoset_anim) # The hash is a bit complex, so we precompute it
-            mesh_geosets = []
+            mesh_geosets = set()
             
             armature = None
             for m in obj.modifiers:
@@ -792,6 +795,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.matrix = obj.matrix_world
                 bone.billboarded = billboarded
                 bone.billboard_lock = billboard_lock
+                if geoset_anim is not None:
+                    geoset_anim_map[bone] = geoset_anim
                 objects['bone'].add(bone)
                 parent = bone.name
             
@@ -811,7 +816,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 else:
                     geoset = Geoset()
                     geoset.mat_name = mat_name
-                    geoset.geoset_anim = geoset_anim
+                    if geoset_anim is not None:
+                        geoset.geoset_anim = geoset_anim
+                        geoset_anim.geoset = geoset
                     geosets[(mat_name, geoset_anim_hash)] = geoset
                   
                   
@@ -850,21 +857,20 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 # Triangles, normals, vertices, and UVs
                 geoset.triangles.append((vertexmap[p.vertices[0]], vertexmap[p.vertices[1]], vertexmap[p.vertices[2]]))
                 
-                if geoset not in mesh_geosets:
-                    mesh_geosets.append(geoset)
+                mesh_geosets.add(geoset)
             
             # 
             for geoset in mesh_geosets:
-                geoset.objects.append(obj) 
+                geoset.objects.append(obj)
                 geoset.min_extent, geoset.max_extent = calc_extents([x[0] for x in geoset.vertices])
                 if not len(geoset.matrices) and parent is not None:
                     geoset.matrices.append([parent])
-                if any((vertexcolor, vertexcolor_anim, visibility)):
-                    if geoset.geoset_anim is not None:
-                        register_global_seq(geoset.geoset_anim.alpha_anim, global_seqs)
-                        register_global_seq(geoset.geoset_anim.color_anim, global_seqs, [('color', 0)])
-                        if any((geoset.geoset_anim.color, geoset.geoset_anim.color_anim)):
-                            const_color_mats.add(geoset.mat_name)
+
+                if geoset.geoset_anim is not None:
+                    register_global_seq(geoset.geoset_anim.alpha_anim, global_seqs)
+                    register_global_seq(geoset.geoset_anim.color_anim, global_seqs, [('color', 0)])
+                    if any((geoset.geoset_anim.color, geoset.geoset_anim.color_anim)):
+                        const_color_mats.add(geoset.mat_name)
                     for bone in itertools.chain.from_iterable(geoset.matrices):
                         geoset_anim_map[bone] = geoset.geoset_anim
                         
@@ -999,20 +1005,17 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     vertices_all.append(vert)
             index = index+1
     
-    index = 0
-    if len(geosets):
-        for geoset in geosets.values():
-            geoset_indices[geoset] = index
-            index = index+1
-            for vertex in geoset.vertices:
-                vertices_all.append(vertex[0])
+    geosets = list(geosets.values())
+    for geoset in geosets:
+        for vertex in geoset.vertices:
+            vertices_all.append(vertex[0])
      
     # Account for particle systems when calculating bounds 
     for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
         vertices_all.append(tuple(x + y/2 for x, y in zip(psys.pivot, psys.dimensions)))
         vertices_all.append(tuple(x - y/2 for x, y in zip(psys.pivot, psys.dimensions)))
     
-    geoset_anims = list(set(g.geoset_anim for g in geosets.values() if g.geoset_anim is not None))
+    geoset_anims = list(set(g.geoset_anim for g in geosets if g.geoset_anim is not None))
     
     global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
     
@@ -1147,7 +1150,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         
         # GEOSETS
         if len(geosets):
-            for geoset in geosets.values():
+            for geoset in geosets:
                 fw("Geoset {\n")
                 # Vertices
                 fw("\tVertices %d {\n" % len(geoset.vertices))
@@ -1192,12 +1195,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tMaterialID %d,\n" % material_names.index(geoset.mat_name))
 
                 fw("}\n")
+
             
         # GEOSET ANIMS
         if len(geoset_anims):
             for anim in geoset_anims:
                 fw("GeosetAnim {\n")
-                alpha = anim.alpha
+                alpha = anim.alpha_anim
                 vertexcolor = anim.color
                 vertexcolor_anim = anim.color_anim
                 if alpha is not None:
@@ -1209,7 +1213,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     write_anim_vec(vertexcolor_anim, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
                 elif vertexcolor is not None:
                     fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(vertexcolor[:3]))))
-                fw("\tGeosetId %d,\n" % geoset_indices[anim['geoset']])
+                    
+                fw("\tGeosetId %d,\n" % geosets.index(anim.geoset))
+
                 fw("}\n")
             
         # BONES
@@ -1226,9 +1232,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
             write_billboard(fw, bone.billboarded, bone.billboard_lock)
             
-            children = [geoset for g in geosets.values() if bone.name in g.matrices]
+            children = [geoset for g in geosets if bone.name in g.matrices]
             if len(children) == 1:
-                fw("\tGeosetId %d,\n" % geoset_indices[children[0]])
+                fw("\tGeosetId %d,\n" % geosets.index(children[0]))
             else:
                 fw("\tGeosetId -1,\n")
                 
