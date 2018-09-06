@@ -45,6 +45,46 @@ class Object: # Stores information about an MDL object (not a blender object!)
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.name)
 
+class GeosetAnim:
+    def __init__(self, color, color_anim, alpha_anim):
+        self.color = color
+        self.color_anim = color_anim
+        self.alpha_anim = alpha_anim
+        
+    def __eq__(self, other):
+        if isinstance(self, other.__class__):
+            if self.color != other.color and not any((self.color_anim, other.color_anim)): # Color doesn't matter if there is an animation
+                return False
+            if not compare_curves(self.alpha_anim, other.alpha_anim):
+                return False
+            if all((self.color_anim, other.color_anim)):
+                if self.color_anim.keys() != other.color_anim.keys():
+                    return False
+                for key in self.color_anim.keys():
+                    if not compare_curves(self.color_anim[key], other.color_anim[key]):
+                        return False
+            
+            return not any((self.color_anim, other.color_anim))
+        return NotImplemented 
+        
+    def __ne__(self, other):
+        return not self.__eq__(other)
+        
+    def __hash__(self):
+        # return hash(tuple(sorted(self.__dict__.items())))
+        alpha_keys = None
+        value_list = []
+        if self.alpha_anim is not None:      
+            value_list.append(get_global_seq(self.alpha_anim))
+            value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in self.alpha_anim.keyframe_points)
+        if self.color_anim is not None:
+            for key in self.color_anim.keys():
+                curve = self.color_anim[key]
+                value_list.append(get_global_seq(curve))
+                value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in curve.keyframe_points)
+
+        return hash(tuple(self.color, *value_list))
+        
 class Geoset:
     def __init__(self):
         self.vertices = []
@@ -53,11 +93,12 @@ class Geoset:
         self.objects = []
         self.min_extent = None
         self.max_extent = None
-        self.mat_index = None
+        self.mat_name = None
+        self.geoset_anim = None
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
-            return self.mat_index == other.mat_index
+            return self.mat_name == other.mat_name
         return NotImplemented
         
     def __ne__(self, other):
@@ -65,7 +106,7 @@ class Geoset:
         
     def __hash__(self):
         # return hash(tuple(sorted(self.__dict__.items())))
-        return hash(self.mat_index)
+        return hash((self.mat_name, self.geoset_anim)) # Different geoset anims should split geosets
         
 class MaterialLayer:
     def __init__(self):
@@ -92,16 +133,15 @@ class MaterialLayer:
         return hash(tuple(sorted(self.__dict__.items())))
     
 class Material:
-    def __init__(self, index):
-        self.mat_index = index
-        self.name = ""
+    def __init__(self, name):
+        self.name = name
         self.layers = []
         self.use_const_color = False
         self.priority_plane = 0
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
-            return self.mat_index == other.mat_index
+            return self.name == other.name
         return NotImplemented
         
     def __ne__(self, other):
@@ -109,7 +149,7 @@ class Material:
         
     def __hash__(self):
         # return hash(tuple(sorted(self.__dict__.items())))
-        return hash(self.mat_index)
+        return hash(self.name)
         
 def rnd(val):
     return round(val, decimal_places)
@@ -142,6 +182,22 @@ def get_curves(obj, data_path, indices):
     if len(curves):
         return curves
     return None
+    
+def compare_curves(c1, c2):
+    if not any((c1, c2)):
+        return True
+        
+    if not all((c1, c2)):
+        return False
+        
+    for k1, k2 in zip(c1.keyframe_points, c2.keyframe_points):
+        if k1.co != k2.co or k1.handle_left != k2.handle_left or k1.handle_right != k2.handle_right:
+            return False
+        if k1.interpolation != k2.interpolation:
+            return False
+        if get_global_seq(c1) != get_global_seq(c2):
+            return False
+    return True
     
 def get_sequences(scene):
     markers = [(s.name, s.frame) for s in scene.timeline_markers]
@@ -270,11 +326,10 @@ def get_layers_from_slots(texture_slots):
 def parse_materials(materials, const_color_mats, global_seqs):
     result = []
     
-    for index, mat in materials.items():
-        material = Material(index)
-        material.name = mat.name
+    for mat in materials:
+        material = Material(mat.name)
         
-        if index in const_color_mats:
+        if mat in const_color_mats:
             material.use_const_color = True
             
             
@@ -552,7 +607,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         global_matrix = Matrix()
 
     geosets = {}
-    materials = {}
+    materials = set()
     objects = defaultdict(set)
     geoset_anims = []
     geoset_anim_map = {}
@@ -678,8 +733,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 else:
                     # Add the material to the list, in case it's unused
                     mat = psys.emitter.ribbon_material
-                    mat_index = [mat for mat in bpy.data.materials].index(mat)
-                    materials[mat_index] = mat
+                    materials.add(mat)
                     
                     objects['ribbon'].add(psys)
             
@@ -713,7 +767,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             # Geoset Animation
             vertexcolor_anim = get_curves(obj, 'color', (0, 1, 2))
             vertexcolor = obj.color if any(i != 1 for i in obj.color) else None
-            
+            geoset_anim = None
+            geoset_anim_hash = 0
+            if any((vertexcolor, vertexcolor_anim, visibility)):
+                geoset_anim = GeosetAnim(vertexcolor, vertexcolor_anim, visibility)
+                geoset_anim_hash = hash(geoset_anim) # The hash is a bit complex, so we precompute it
             mesh_geosets = []
             
             armature = None
@@ -743,20 +801,22 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for f in mesh.tessfaces:
                 p = mesh.polygons[f.index]
                 # Textures and materials
-                mat_index = 0
+                mat_name = None
                 if obj.material_slots and len(obj.material_slots):
                     mat = obj.material_slots[p.material_index].material
                     if mat is not None:
-                        mat_index = [mat for mat in bpy.data.materials].index(mat)
-                        materials[mat_index] = mat
+                        mat_name = mat.name
+                        materials.add(mat)
                             
                 geoset = None
-                if mat_index in geosets.keys():
-                    geoset = geosets[mat_index]
+                if (mat_name, geoset_anim_hash) in geosets.keys():
+                    geoset = geosets[(mat_name, geoset_anim_hash)]
                 else:
                     geoset = Geoset()
-                    geoset.mat_index = mat_index
-                    geosets[mat_index] = geoset
+                    geoset.mat_name = mat_name
+                    geoset.geoset_anim = geoset_anim
+                    geosets[(mat_name, geoset_anim_hash)] = geoset
+                  
                   
                 # Vertices, faces, and matrices  
                 vertexmap = {}
@@ -804,14 +864,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     geoset.matrices.append([parent])
                 if any((vertexcolor, vertexcolor_anim, visibility)):
                     
-                    geoset_anim = {"color" : vertexcolor, "color anim" : vertexcolor_anim, "visibility" : visibility, "geoset" : geoset}
-                    if any((vertexcolor, vertexcolor_anim)):
-                        const_color_mats.add(geoset.mat_index)
-                    if geoset_anim not in geoset_anims:
-                        geoset_anims.append(geoset_anim)
+                    if geoset.geoset_anim is not None:
+                        const_color_mats.add(geoset.mat_name)
                         
                     for bone in itertools.chain.from_iterable(geoset.matrices):
-                        geoset_anim_map[bone] = geoset_anim
+                        geoset_anim_map[bone] = geoset.geoset_anim
                         
                     
                     
@@ -905,6 +962,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             cameras.append(obj)
     
     mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
+    material_names = [mat.name for mat in mdl_materials]
     
     # Add default material if no other materials present
     if len(mdl_materials) == 0 and len(geosets) > 0:
@@ -931,6 +989,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     objects_all = []
     object_indices = {}
     geoset_indices = {}
+    
     index = 0
     for tag in ('bone', 'light', 'helper', 'attachment', 'particle', 'particle2', 'ribbon', 'eventobject', 'collisionshape'):
         for object in objects[tag]:
@@ -954,6 +1013,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     for psys in list(objects['particle']) + list(objects['particle2']) + list(objects['ribbon']):
         vertices_all.append(tuple(x + y/2 for x, y in zip(psys.pivot, psys.dimensions)))
         vertices_all.append(tuple(x - y/2 for x, y in zip(psys.pivot, psys.dimensions)))
+    
+    geoset_anims = list(set(g.geoset_anim for g in geosets.values() if g.geoset_anim is not None))
     
     global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
     
@@ -1088,7 +1149,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         
         # GEOSETS
         if len(geosets):
-            for i, geoset in enumerate(geosets.values()):
+            for geoset in geosets.values():
                 fw("Geoset {\n")
                 # Vertices
                 fw("\tVertices %d {\n" % len(geoset.vertices))
@@ -1130,7 +1191,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.min_extent)))
                 fw("\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, geoset.max_extent)))
                 fw("\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(geoset.min_extent, geoset.max_extent)))
-                fw("\tMaterialID %d,\n" % i) # FIXME
+                fw("\tMaterialID %d,\n" % material_names.index(geoset.mat_name))
 
                 fw("}\n")
             
@@ -1138,9 +1199,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if len(geoset_anims):
             for anim in geoset_anims:
                 fw("GeosetAnim {\n")
-                alpha = anim["visibility"]
-                vertexcolor = anim["color"]
-                vertexcolor_anim = anim["color anim"]
+                alpha = anim.alpha
+                vertexcolor = anim.color
+                vertexcolor_anim = anim.color_anim
                 if alpha is not None:
                     write_anim(alpha, "Alpha", fw, global_seqs, "\t", True)
                 else: 
