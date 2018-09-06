@@ -886,6 +886,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             elif obj.name.endswith(" Ref"):
                 att = Object(obj.name)
                 att.pivot = global_matrix * Vector(obj.location)
+                att.parent = parent
                 att.visibility = visibility
                 att.billboarded = billboarded
                 att.billboard_lock = billboard_lock
