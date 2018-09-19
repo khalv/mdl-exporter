@@ -2,7 +2,7 @@ import bpy
 import bmesh
 import itertools
 import math
-from mathutils import Vector, Matrix, Quaternion
+from mathutils import Vector, Matrix, Quaternion, Euler
 from operator import itemgetter
 from collections import defaultdict
 
@@ -39,6 +39,43 @@ class Object: # Stores information about an MDL object (not a blender object!)
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.name)
 
+class TextureAnim:
+    def __init__(self):
+        self.translation = None
+        self.rotation = None
+        self.scale = None
+                
+    def __eq__(self, other):
+        if isinstance(self, other.__class__):
+            a = [self.translation, self.rotation, self.scale]
+            b = [other.translation, other.rotation, other.scale]
+            
+            if a.count(None) != b.count(None):
+                return False
+                
+            for c1, c2 in zip(a, b):
+                if c1 is not None and c2 is not None:
+                    if c1.keys() != c2.keys():
+                        return False
+                    for key in c1.keys():
+                        if not compare_curves(c1[key], c2[key]):
+                            return False
+            return True
+            
+        return NotImplemented
+        
+    def __hash__(self):
+    
+        value_list = []
+        for c in (self.translation, self.rotation, self.scale):
+            if c is not None:
+                for key in c.keys():
+                    curve = c[key]
+                    value_list.append(get_global_seq(curve))
+                    value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in curve.keyframe_points)
+
+        return hash(tuple(value_list))
+        
 class GeosetAnim:
     def __init__(self, color, color_anim, alpha_anim):
         self.color = color
@@ -187,6 +224,9 @@ def compare_curves(c1, c2):
     if not all((c1, c2)):
         return False
         
+    if len(c1.keyframe_points) != len(c2.keyframe_points):
+        return False
+        
     for k1, k2 in zip(c1.keyframe_points, c2.keyframe_points):
         if k1.co != k2.co or k1.handle_left != k2.handle_left or k1.handle_right != k2.handle_right:
             return False
@@ -240,15 +280,18 @@ def get_texture_node(node):
         return None
 
 def get_texture_anim(animdata, uv_node):
-    anim = {}
+    anim = TextureAnim()
     if animdata.action:
         for tag in ('translation', 'rotation', 'scale'):
+            curves = {}
             for i in (0, 1, 2):
                 fcurve = animdata.action.fcurves.find('nodes[\"%s\"].%s' % (uv_node.name, tag), i)    
                 if fcurve is not None:
-                    anim[(tag, i)] = fcurve
+                    curves[(tag, i)] = fcurve
+            if len(curves):
+                setattr(anim, tag, curves)
                 
-    return anim if len(anim) else None
+    return anim if any((anim.translation, anim.rotation, anim.scale)) else None
   
 def get_filter_mode(tag):
     if tag == 'ADD':
@@ -353,16 +396,16 @@ def parse_materials(materials, const_color_mats, global_seqs):
                     if uv_node is not None and mat.node_tree.animation_data is not None:
                         layer.texture_anim = get_texture_anim(mat.node_tree.animation_data, uv_node)
                         if layer.texture_anim is not None:
-                            if ('translation', 0) in layer.texture_anim.keys():
-                                global_seq = get_global_seq(layer.texture_anim[('translation', 0)])
+                            if layer.texture_anim.translation is not None:
+                                global_seq = get_global_seq(list(layer.texture_anim.translation.values())[0])
                                 if global_seq > 0:
                                     global_seqs.add(global_seq)
-                            if ('rotation', 0) in layer.texture_anim.keys():
-                                global_seq = get_global_seq(layer.texture_anim[('rotation', 0)])
+                            if layer.texture_anim.rotation is not None:
+                                global_seq = get_global_seq(list(layer.texture_anim.rotation.values())[0])
                                 if global_seq > 0:
                                     global_seqs.add(global_seq)
-                            if ('scale', 0) in layer.texture_anim.keys():
-                                global_seq = get_global_seq(layer.texture_anim[('scale', 0)])
+                            if layer.texture_anim.scale is not None:
+                                global_seq = get_global_seq(list(layer.texture_anim.scale.values())[0])
                                 if global_seq > 0:
                                     global_seqs.add(global_seq)
                         
@@ -514,6 +557,38 @@ def write_anim(curve, name, fw, global_seqs, indent="", no_interp=False, scale=1
             fw(indent+"\t\tInTan %s,\n" % f2s(rnd(handle_l)))
             fw(indent+"\t\tOutTan %s,\n" % f2s(rnd(handle_r)))
     fw(indent+"}\n")    
+
+# TODO: Add axis correction and recycle this function to support euler bone animations.
+def write_anim_euler(anim, name, data_path, fw, global_seqs, indent="\t"):
+    xcurve = anim[(data_path, 0)]
+    ycurve = anim[(data_path, 1)]
+    zcurve = anim[(data_path, 2)]
+    
+    fw(indent+"%s %d {\n" % (name, len(xcurve.keyframe_points)))
+    
+    interp = get_interp(xcurve.keyframe_points[0].interpolation)
+    if (interp == 'Bezier'):
+        fw(indent+"\tHermite,\n") # Rotations use hermite interpolation
+    else:
+        fw(indent+"\t%s,\n" % interp) # Interpolation mode 
+    
+    if get_global_seq(xcurve) > 0:
+        fw(indent+"\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))
+        
+    for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
+        frame = [k.co[0] for k in (x, y, z) if k is not None][0]
+        
+        q = Euler(tuple(math.radians(x) for x in (x.co[1], y.co[1], z.co[1]))).to_quaternion()
+        q_hl = Euler(tuple(math.radians(x) for x in (x.handle_left[1], y.handle_left[1], z.handle_left[1]))).to_quaternion()
+        q_hr = Euler(tuple(math.radians(x) for x in (x.handle_right[1], y.handle_right[1], z.handle_right[1]))).to_quaternion()
+        
+        fw(indent+"\t%d: { %s, %s, %s, %s },\n" % (f2ms * int(frame), f2s(rnd(q.x)), f2s(rnd(q.y)), f2s(rnd(q.z)), f2s(rnd(q.w))))
+        
+        if interp == 'Bezier':
+            fw(indent+"\t\tInTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in q_hl))
+            fw(indent+"\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in q_hr))
+            
+    fw(indent+"}\n")
     
 def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_matrix):
     xcurve = anim[(data_path, 0)]
@@ -987,7 +1062,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if psys.emitter.texture_path not in textures:
             textures.append(psys.emitter.texture_path)
             
-    tvertex_anims = [layer.texture_anim for layer in mdl_layers if layer.texture_anim is not None]
+    tvertex_anims = list(set((layer.texture_anim for layer in mdl_layers if layer.texture_anim is not None)))
     
     sequences = get_sequences(context.scene)
     if len(sequences) == 0:
@@ -1109,9 +1184,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     if layer.unfogged is True:
                         fw("\t\t\tUnfogged,\n")
                         
-                    if layer.texture_anim is not None:
-                        pass
-                        
                     if layer.no_depth_test:
                         fw("\t\t\tNoDepthTest,\n")
                         
@@ -1139,15 +1211,12 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             fw("TextureAnims %d {\n" % len(tvertex_anims))
             for uv_anim in tvertex_anims:
                 fw("\tTVertexAnim {\n")
-                if ('translation', 0) in uv_anim.keys():
-                    translation = {('translation', i) : uv_anim[('translation', i )] for i in range(3)}
-                    write_anim_vec(translation, "Translation", 'translation', fw, global_seqs, Matrix(), "\t\t")
-                if ('rotation', 0) in uv_anim.keys():
-                    rotation = {('rotation', i) : uv_anim[('rotation', i )] for i in range(3)}
-                    write_anim_vec(translation, "Rotation", 'rotation', fw, global_seqs, Matrix(), "\t\t")
-                if ('scale', 0) in uv_anim.keys():
-                    translation = {('scale', i) : uv_anim[('scale', i )] for i in range(3)}
-                    write_anim_vec(translation, "Scaling", 'scale', fw, global_seqs, Matrix(), "\t\t")
+                if uv_anim.translation is not None:
+                    write_anim_vec(uv_anim.translation, "Translation", 'translation', fw, global_seqs, Matrix(), "\t\t")
+                if uv_anim.rotation is not None:
+                    write_anim_euler(uv_anim.rotation, "Rotation", 'rotation', fw, global_seqs, "\t\t")
+                if uv_anim.scale is not None:
+                    write_anim_vec(uv_anim.scale, "Scaling", 'scale', fw, global_seqs, Matrix(), "\t\t")
                 fw("\t}\n")
             fw("}\n")
         
