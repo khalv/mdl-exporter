@@ -40,9 +40,9 @@ class MaterialLayerSettings(bpy.types.PropertyGroup):
         
     filter_mode = EnumProperty(
         name = "Filter Mode",
-        items = [('None', "Opaque", ""),
+        items = [('None', "None", ""),
                  ('Blend', "Blend", ""),
-                 ('Transparent', "Transparent", ""),
+                 ('Transparent', "2 Color Alpha", ""),
                  ('Additive', "Additive", ""),
                  ('AddAlpha', "Additive Alpha", ""),
                  ('Modulate', "Modulate", ""),

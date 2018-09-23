@@ -515,6 +515,12 @@ def write_anim(curve, name, fw, global_seqs, indent="", no_interp=False, scale=1
             fw(indent+"\t\tOutTan %s,\n" % f2s(rnd(handle_r)))
     fw(indent+"}\n")    
     
+    
+def transform_rot(q, bone_matrix, global_matrix):
+    rot = global_matrix.to_quaternion() * q * global_matrix.inverted().to_quaternion() 
+    rot.normalize()
+    return rot
+        
 def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_matrix):
     xcurve = anim[(data_path, 0)]
     ycurve = anim[(data_path, 1)]
@@ -537,14 +543,17 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_m
         # At some point i plan to use itertools.zip_longest and evaluate missing frames... this is for that
         frame = [k.co[0] for k in (x, y, z, w) if k is not None][0]
         
-        rot = Quaternion((x.co[1], y.co[1], z.co[1], w.co[1]))
-        rot = global_matrix.to_quaternion() * rot * global_matrix.inverted().to_quaternion() 
-        rot.normalize()
+        # bone_matrix is currently unused. Still trying to figure out the correct conversion.
+        rot = transform_rot(Quaternion((x.co[1], y.co[1], z.co[1], w.co[1])), bone_matrix, global_matrix)
+        rot_hl = transform_rot(Quaternion((x.handle_left[1], y.handle_left[1], z.handle_left[1], w.handle_left[1])), bone_matrix, global_matrix)
+        rot_hr = transform_rot(Quaternion((x.handle_right[1], y.handle_right[1], z.handle_right[1], w.handle_right[1])), bone_matrix, global_matrix)
+        # rot = global_matrix.to_quaternion() * rot * global_matrix.inverted().to_quaternion() 
+        # rot.normalize()
         fw("\t\t%d: { %s, %s, %s, %s },\n" % (f2ms * int(frame), f2s(rnd(rot.x)), f2s(rnd(rot.y)), f2s(rnd(rot.z)), f2s(rnd(rot.w))))
             
         if interp == 'Bezier':
-            fw("\t\t\tInTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
-            fw("\t\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot))
+            fw("\t\t\tInTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot_hl)) # Approximated by simply using the frame rotation values... from studying MDL files, these seem to be related. WIP. 
+            fw("\t\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in rot_hr))
 
     fw("\t}\n")
     
