@@ -457,7 +457,7 @@ def prepare_mesh(obj, context, matrix):
     bm.from_mesh(mesh)
     # If an object has had a negative scale applied, normals will be inverted. This will fix that. 
     if any(s < 0 for s in obj.scale):
-        recalc_face_normals(bm, faces=bm.faces)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bmesh.ops.triangulate(bm, faces=bm.faces)
     bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
     bm.to_mesh(mesh)
@@ -558,6 +558,12 @@ def write_anim(curve, name, fw, global_seqs, indent="", no_interp=False, scale=1
             fw(indent+"\t\tOutTan %s,\n" % f2s(rnd(handle_r)))
     fw(indent+"}\n")    
 
+    
+def transform_rot(q, bone_matrix, global_matrix):
+    rot = global_matrix.to_quaternion() * q * global_matrix.inverted().to_quaternion() 
+    rot.normalize()
+    return rot
+    
 # TODO: Add axis correction and recycle this function to support euler bone animations.
 def write_anim_euler(anim, name, data_path, fw, global_seqs, indent="\t"):
     xcurve = anim[(data_path, 0)]
@@ -589,12 +595,6 @@ def write_anim_euler(anim, name, data_path, fw, global_seqs, indent="\t"):
             fw(indent+"\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in q_hr))
             
     fw(indent+"}\n")
-    
-    
-def transform_rot(q, bone_matrix, global_matrix):
-    rot = global_matrix.to_quaternion() * q * global_matrix.inverted().to_quaternion() 
-    rot.normalize()
-    return rot
         
 def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_matrix):
     xcurve = anim[(data_path, 0)]
@@ -632,7 +632,7 @@ def write_anim_rot(anim, name, data_path, fw, global_seqs, bone_matrix, global_m
 
     fw("\t}\n")
     
-def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, indent = "\t", order = (0, 1, 2)):
+def write_anim_vec(anim, name, data_path, fw, global_seqs, global_matrix = Matrix(), world_matrix = Matrix(), indent = "\t", order = (0, 1, 2)):
     
     xcurve = anim[(data_path, order[0])]
     ycurve = anim[(data_path, order[1])]
@@ -647,19 +647,13 @@ def write_anim_vec(anim, name, data_path, fw, global_seqs, bone_matrix, indent =
     if get_global_seq(xcurve) > 0:
         fw(indent+"\tGlobalSeqId %d,\n" % global_seqs.index(get_global_seq(xcurve)))    
        
-    rot = bone_matrix.to_quaternion()
-    scale = bone_matrix.to_scale()
-       
     for x, y, z in zip(xcurve.keyframe_points, ycurve.keyframe_points, zcurve.keyframe_points):
         # At some point i plan to use itertools.zip_longest and evaluate missing frames... this is for that
         frame = [k.co[0] for k in (x, y, z) if k is not None][0]
         
-        handle_l = Vector((x.handle_left[1] * scale.x, y.handle_left[1] * scale.y, z.handle_left[1] * scale.z)) 
-        handle_r = Vector((x.handle_right[1] * scale.x, y.handle_right[1] * scale.y, z.handle_right[1] * scale.z)) 
-        vec = Vector((x.co[1] * scale.x, y.co[1] * scale.y, z.co[1] * scale.z))
-        vec.rotate(rot)
-        handle_l.rotate(rot)
-        handle_r.rotate(rot)
+        handle_l = world_matrix.inverted() * Vector((x.handle_left[1], y.handle_left[1], z.handle_left[1])) 
+        handle_r = world_matrix.inverted() * Vector((x.handle_right[1], y.handle_right[1] , z.handle_right[1])) 
+        vec = global_matrix * world_matrix.inverted() * Vector((x.co[1], y.co[1], z.co[1]))
         
         fw(indent+"\t%d: { %s, %s, %s },\n" % (f2ms * int(frame), f2s(rnd(vec.x)), f2s(rnd(vec.y)), f2s(rnd(vec.z))))
             
@@ -958,11 +952,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             bpy.data.meshes.remove(mesh)
         elif obj.type == 'EMPTY':
             if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
-                eventtrack = Object(obj.name)
-                eventtrack.pivot = global_matrix * Vector(obj.location)
-                eventtrack.curve = get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
-                register_global_seq(eventtrack.curve, global_seqs)
-                objects['eventtrack'].add(eventtrack)
+                eventobj = Object(obj.name)
+                eventobj.pivot = global_matrix * Vector(obj.location)
+                eventobj.track = get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
+                register_global_seq(eventobj.track, global_seqs)
+                objects['eventobject'].add(eventobj)
                 # events.append({"object" : obj, "eventtrack" : eventtrack})
             elif obj.name.endswith(" Ref"):
                 att = Object(obj.name)
@@ -1120,7 +1114,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         if len(objects['attachment']):
             fw("\tNumAttachments %d,\n" % len(objects['attachment']))
         if len(objects['eventobject']):
-            fw("\tNumEvents %d,\n" % objects['eventobject'])
+            fw("\tNumEvents %d,\n" % len(objects['eventobject']))
         if len(geoset_anims):
             fw("\tNumGeosetAnims %d,\n" % len(geoset_anims))
         if len(objects['light']):
@@ -1221,11 +1215,11 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for uv_anim in tvertex_anims:
                 fw("\tTVertexAnim {\n")
                 if uv_anim.translation is not None:
-                    write_anim_vec(uv_anim.translation, "Translation", 'translation', fw, global_seqs, Matrix(), "\t\t")
+                    write_anim_vec(uv_anim.translation, "Translation", 'translation', fw, global_seqs, Matrix(), Matrix(), "\t\t")
                 if uv_anim.rotation is not None:
                     write_anim_euler(uv_anim.rotation, "Rotation", 'rotation', fw, global_seqs, "\t\t")
                 if uv_anim.scale is not None:
-                    write_anim_vec(uv_anim.scale, "Scaling", 'scale', fw, global_seqs, Matrix(), "\t\t")
+                    write_anim_vec(uv_anim.scale, "Scaling", 'scale', fw, global_seqs, Matrix(), Matrix(), "\t\t")
                 fw("\t}\n")
             fw("}\n")
         
@@ -1291,7 +1285,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     fw("\tstatic Alpha 1.0,\n")
                     
                 if vertexcolor_anim is not None:
-                    write_anim_vec(vertexcolor_anim, 'Color', 'color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                    write_anim_vec(vertexcolor_anim, 'Color', 'color', fw, global_seqs, Matrix(), Matrix(), "\t", (2, 1, 0))
                 elif vertexcolor is not None:
                     fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(vertexcolor[:3]))))
                     
@@ -1325,13 +1319,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tGeosetAnimId None,\n")
                 
             if bone.anim_loc is not None:
-                write_anim_vec(bone.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * bone.matrix)
+                write_anim_vec(bone.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix, bone.matrix)
                 
             if bone.anim_rot is not None:
                 write_anim_rot(bone.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, bone.matrix, global_matrix)
                 
             if bone.anim_scale is not None:
-                write_anim_vec(bone.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix())
+                write_anim_vec(bone.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix(), Matrix())
                 
             # Visibility
             fw("}\n")
@@ -1361,7 +1355,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tstatic AttenuationEnd %s,\n" % f2s(light.atten_end)) #TODO: Add animation support
                
             if light.color_anim is not None:
-                write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix())
+                write_anim_vec(light.color_anim, "Color", 'color', fw, global_seqs, Matrix(), Matrix())
             else:
                 fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(light.color[:3]))))
                
@@ -1371,7 +1365,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tstatic Intensity %s,\n" % f2s(light.intensity))
                
             if light.amb_color_anim is not None:
-                write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix())
+                write_anim_vec(light.amb_color_anim, "Color", 'color', fw, global_seqs, Matrix(), Matrix())
             else:
                 fw("\tstatic AmbColor {%s, %s, %s},\n" % tuple(map(f2s, reversed(light.amb_color[:3]))))
                 
@@ -1397,13 +1391,13 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             write_billboard(fw, helper.billboarded, helper.billboard_lock)
             
             if helper.anim_loc is not None:
-                write_anim_vec(helper.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix * helper.matrix)
+                write_anim_vec(helper.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix, helper.matrix)
                 
             if helper.anim_rot is not None:
                 write_anim_rot(helper.anim_rot, 'Rotation', 'rotation_quaternion', fw, global_seqs, helper.matrix, global_matrix)
                 
             if helper.anim_scale is not None:
-                write_anim_vec(helper.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix())
+                write_anim_vec(helper.anim_scale, 'Scaling', 'scale', fw, global_seqs, Matrix(), Matrix())
             
             fw("}\n")
 
@@ -1546,15 +1540,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             else:
                 fw("\tstatic EmissionRate %s,\n" % f2s(rnd(emitter.emission_rate)))
                 
-            if psys.scale_anim is not None and ('scale', 0) in psys.scale_anim.keys():
-                write_anim(psys.scale_anim[('scale', 0)], "Width", fw, global_seqs, "\t", scale=psys.dimensions[0])
-            else:
-                fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[0])))
-                
             if psys.scale_anim is not None and ('scale', 1) in psys.scale_anim.keys():
-                write_anim(psys.scale_anim[('scale', 1)], "Length", fw, global_seqs, "\t", scale=psys.dimensions[1])
+                write_anim(psys.scale_anim[('scale', 1)], "Width", fw, global_seqs, "\t", scale=psys.dimensions[1])
             else:
-                fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[1])))
+                fw("\tstatic Width %s,\n" % f2s(rnd(psys.dimensions[1])))
+               
+            if psys.scale_anim is not None and ('scale', 0) in psys.scale_anim.keys():
+                write_anim(psys.scale_anim[('scale', 0)], "Length", fw, global_seqs, "\t", scale=psys.dimensions[0])
+            else:
+                fw("\tstatic Length %s,\n" % f2s(rnd(psys.dimensions[0])))
                 
             fw("\t%s,\n" % emitter.filter_mode)
             fw("\tRows %d,\n" % emitter.rows)
@@ -1604,7 +1598,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tstatic Alpha %s,\n" % emitter.alpha)
             
             if psys.ribbon_color_anim is not None:
-                write_anim_vec(psys.ribbon_color_anim, 'Color', 'ribbon_color', fw, global_seqs, Matrix(), "\t", (2, 1, 0))
+                write_anim_vec(psys.ribbon_color_anim, 'Color', 'ribbon_color', fw, global_seqs, Matrix(), Matrix(), "\t", (2, 1, 0))
             else:
                 fw("\tstatic Color {%s, %s, %s},\n" % tuple(map(f2s, reversed(emitter.ribbon_color))))
                 
@@ -1643,11 +1637,12 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 fw("\tObjectId %d,\n" % object_indices[event.name])
             if event.parent is not None:
                 fw("\tParent %d,\n" % object_indices[event.parent])
-            eventtrack = event.curve
+            eventtrack = event.track
             if eventtrack is not None:
                 fw("\tEventTrack %d {\n" % len(eventtrack.keyframe_points))
                 for keyframe in eventtrack.keyframe_points:
                     fw("\t\t%d,\n" % (f2ms * int(keyframe.co[0])))
+                fw("\t}\n")
             fw("}\n")
          
         # COLLISION SHAPES
