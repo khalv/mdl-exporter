@@ -885,7 +885,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             for f in mesh.tessfaces:
                 p = mesh.polygons[f.index]
                 # Textures and materials
-                mat_name = None
+                mat_name = "default"
                 if obj.material_slots and len(obj.material_slots):
                     mat = obj.material_slots[p.material_index].material
                     if mat is not None:
@@ -1050,15 +1050,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     
     geosets = list(geosets.values())
     mdl_materials = parse_materials(materials, const_color_mats, global_seqs)
-    mdl_materials = sorted(mdl_materials, key=lambda x: x.priority_plane)
-    material_names = [mat.name for mat in mdl_materials]
-    
     # Add default material if no other materials present
-    if len(mdl_materials) == 0 and len(geosets) > 0:
-        default_mat = Material(0)
+    if any((x for x in geosets if x.mat_name == "default")):
+        default_mat = Material("default")
         default_mat.layers.append(MaterialLayer())
         mdl_materials.append(default_mat)
-        operator.report({'WARNING'}, "No materials found!")
+        operator.report({'WARNING'}, "Some geosets have no materials!")
+    
+    mdl_materials = sorted(mdl_materials, key=lambda x: x.priority_plane)
+    material_names = [mat.name for mat in mdl_materials]
 
     mdl_layers = list(itertools.chain.from_iterable([material.layers for material in mdl_materials]))
     textures = list(set((layer.texture for layer in mdl_layers))) # Convert to set and back to list for unique entries
@@ -1323,7 +1323,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             if bone.parent is not None:
                 fw("\tParent %d,\n" % object_indices[bone.parent])
             
-            write_billboard(fw, bone.billboarded, bone.billboard_lock)
+            if hasattr(bone, "billboarded"):
+                write_billboard(fw, bone.billboarded, bone.billboard_lock)
             
             children = [g for g in geosets if bone.name in itertools.chain.from_iterable(g.matrices)]
             if len(children) == 1:
@@ -1405,8 +1406,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
             if helper.parent is not None:
                 fw("\tParent %d,\n" % object_indices[helper.parent])
-               
-            write_billboard(fw, helper.billboarded, helper.billboard_lock)
+            
+            if hasattr(helper, "billboarded"):
+                write_billboard(fw, helper.billboarded, helper.billboard_lock)
             
             if helper.anim_loc is not None:
                 write_anim_vec(helper.anim_loc, 'Translation', 'location', fw, global_seqs, global_matrix, helper.matrix)
