@@ -6,6 +6,16 @@ from mathutils import Vector, Matrix, Quaternion, Euler
 from operator import itemgetter
 from collections import defaultdict
 
+from .classes import (
+    War3Object,
+    War3AnimationSequence,
+    War3Animation,
+    War3GeosetAnim,
+    War3Geoset,
+    War3MaterialLayer,
+    War3Material
+    )
+
 # -- Object types -- #
 # Bone
 # Light
@@ -242,11 +252,11 @@ def get_sequences(scene):
     f2ms = 1000 / scene.render.fps
     sequences = []
     
-    i = 0
-    while i < len(markers):
-        assert (markers[i+1] is not None and markers[i][0] == markers[i+1][0]), "Missing end frame for sequence %s!" % markers[i][0]
-        sequences.append((markers[i][0], f2ms * int(markers[i][1]), f2ms * int(markers[i+1][1]))) # Name, start, end
-        i += 2
+    for sequence in scene.mdl_sequences:
+        start=min(tuple(m.frame*f2ms for m in scene.timeline_markers if m.name == sequence.name))
+        end=max(tuple(m.frame*f2ms for m in scene.timeline_markers if m.name == sequence.name))
+        
+        sequences.append(War3AnimationSequence(sequence.name, start, end, sequence.non_looping, sequence.move_speed))
         
     return sequences
     
@@ -694,7 +704,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     scene = context.scene
     
     current_frame = scene.frame_current
-    scene.frame_current = 1
+    scene.frame_set(1)
     
     if use_selection:
         objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
@@ -735,7 +745,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             settings = obj.particle_systems[0].settings
         
             if getattr(settings, "mdl_particle_sys"):
-                psys = Object(obj.name)
+                psys = War3Object(obj.name)
                 psys.emitter = settings.mdl_particle_sys
                 psys.pivot = global_matrix * Vector(obj.location)
                 
@@ -809,7 +819,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
         # Meshes
         elif obj.type == 'EMPTY' and obj.name.startswith('Collision'):
-            collider = Object(obj.name)
+            collider = War3Object(obj.name)
             collider.parent = parent
             collider.pivot = global_matrix * Vector(obj.location)
             
@@ -855,7 +865,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
             bone = None
             if (armature is None and parent is None) or is_animated:
-                bone = Object(obj.name) # Object is animated or parent is missing - create a bone for it!
+                bone = War3Object(obj.name) # Object is animated or parent is missing - create a bone for it!
                 if not obj.name.startswith("Bone_"):
                     bone.name = "Bone_"+obj.name
                 
@@ -952,14 +962,14 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             bpy.data.meshes.remove(mesh)
         elif obj.type == 'EMPTY':
             if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
-                eventobj = Object(obj.name)
+                eventobj = War3Object(obj.name)
                 eventobj.pivot = global_matrix * Vector(obj.location)
                 eventobj.track = get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
                 register_global_seq(eventobj.track, global_seqs)
                 objects['eventobject'].add(eventobj)
                 # events.append({"object" : obj, "eventtrack" : eventtrack})
             elif obj.name.endswith(" Ref"):
-                att = Object(obj.name)
+                att = War3Object(obj.name)
                 att.pivot = global_matrix * Vector(obj.location)
                 att.parent = parent
                 att.visibility = visibility
@@ -967,7 +977,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 att.billboard_lock = billboard_lock
                 objects['attachment'].add(att)
             elif obj.name.startswith("Bone_"):
-                bone = Object(obj.name)
+                bone = War3Object(obj.name)
                 if parent is not None:
                     bone.parent = parent
                 bone.pivot = global_matrix * Vector(obj.location)
@@ -980,7 +990,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 objects['bone'].add(bone)
         elif obj.type == 'ARMATURE':
             for b in obj.pose.bones:
-                bone = Object(b.name)
+                bone = War3Object(b.name)
                 if b.parent is not None:
                     bone.parent = b.parent.name
                 bone.pivot = obj.matrix_world * Vector(b.bone.head_local) # Armature space to world space
@@ -999,7 +1009,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 objects['bone'].add(bone)
                 # First add to a temporary list and later cross-check against the bones of each geoset? Pick only animated bones?    
         elif obj.type == 'LAMP':
-            light = Object(obj.name)
+            light = War3Object(obj.name)
             light.object = obj
             light.pivot = global_matrix * Vector(obj.location)
             light.billboarded = billboarded
@@ -1067,9 +1077,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             
     tvertex_anims = list(set((layer.texture_anim for layer in mdl_layers if layer.texture_anim is not None)))
     
-    sequences = get_sequences(context.scene)
+    sequences = get_sequences(scene)
     if len(sequences) == 0:
-        sequences.append(("Stand", 0, 3333)) # Default anim
+        sequences.append(War3AnimationSequence("Stand", 0, 3333)) # Default anim
 
     vertices_all = []
     objects_all = []
@@ -1100,7 +1110,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     
     global_extents_min, global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
     
-    scene.frame_current = current_frame
+    scene.frame_set(current_frame)
     
     with open(filepath, 'w') as output:
         fw = output.write
@@ -1129,9 +1139,17 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         
         # SEQUENCES
         fw("Sequences %d {\n" % len(sequences))
-        for (name, start, end) in sequences:
-            fw("\tAnim \"%s\" {\n" % name)
-            fw("\t\tInterval {%d, %d},\n" % (start, end))
+        for sequence in sequences:
+            fw("\tAnim \"%s\" {\n" % sequence.name)
+            fw("\t\tInterval {%d, %d},\n" % (sequence.start, sequence.end))
+            if sequence.non_looping:
+                fw("\t\tNonLooping,\n")
+            if 'walk' in sequence.name.lower():
+                fw("\t\tMoveSpeed %d,\n" % sequence.movement_speed)
+            
+            fw("\t\tMinimumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_min)))
+            fw("\t\tMaximumExtent {%s, %s, %s},\n" % tuple(map(f2s, global_extents_max)))
+            fw("\t\tBoundsRadius %s,\n" % f2s(calc_bounds_radius(global_extents_min, global_extents_max)))
             fw("\t}\n")
         fw("}\n")
         
