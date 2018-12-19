@@ -5,6 +5,7 @@ By Kalle Halvarsson
 ## Installation
 * Add export_mdl folder to a zip or rar file
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
+* MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
 * The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
 
 ## Instructions
