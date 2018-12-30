@@ -10,6 +10,8 @@ from mathutils import (
     Vector
     )
     
+from .utils import *
+    
 class War3Model:
 
     default_texture = "Textures\white.blp"
@@ -19,7 +21,7 @@ class War3Model:
         self.objects = defaultdict(set)
         self.geosets = {}
         self.materials = set()
-        self.sequences = None
+        self.sequences = []
         self.global_extents_min = 0
         self.global_extents_max = 0
         self.geoset_anims = []
@@ -27,9 +29,10 @@ class War3Model:
         self.const_color_mats = set()
         self.global_seqs = set()
         self.global_matrix = Matrix()
+        self.cameras = []
         
         self.f2ms = 1000 / context.scene.render.fps # Frame to milisecond conversion
-        self.name = bpy.path.basename(context.blend_data.filepath)
+        self.name = bpy.path.basename(context.blend_data.filepath).replace(".blend","")
         
     @staticmethod
     def prepare_mesh(obj, context, matrix):
@@ -65,6 +68,8 @@ class War3Model:
         
         scene = context.scene
         
+        self.sequences = self.get_sequences(scene)
+        
         objs = []
         if use_selection:
             objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
@@ -76,17 +81,22 @@ class War3Model:
         
        
     def get_sequences(self, scene):
-        markers = [(s.name, s.frame) for s in scene.timeline_markers]
-        markers.sort(key=lambda x:x[1])
         sequences = []
         
         for sequence in scene.mdl_sequences:
-            start=min(tuple(m.frame*self.f2ms for m in scene.timeline_markers if m.name == sequence.name))
-            end=max(tuple(m.frame*self.f2ms for m in scene.timeline_markers if m.name == sequence.name))
+            sequences.append(War3AnimationSequence(sequence.name, sequence.start * self.f2ms, sequence.end * self.f2ms, sequence.non_looping, sequence.move_speed))
+          
+          
+        if len(sequences) == 0:
+            sequences.append(War3AnimationSequence("Stand", 0, 3333))
             
-            sequences.append(War3AnimationSequence(sequence.name, start, end, sequence.non_looping, sequence.move_speed))
-            
+        sequences.sort(key=lambda x:x.start)
+        
         return sequences
+        
+    def register_global_sequence(self, curve):
+        if curve is not None and curve.global_sequence > 0:
+            self.global_seqs.add(curve.global_sequence)
        
     @staticmethod
     def calc_bounds_radius(min_ext, max_ext):
@@ -118,6 +128,11 @@ class War3Object: # Stores information about an MDL object (not a blender object
         self.billboarded = False
         self.billboard_lock = (False, False, False)
         
+    def set_billboard(billboard):
+        bb = obj.mdl_billboard
+        self.billboarded = bb.billboarded
+        self.billboard_lock = (bb.billboard_lock_z, bb.billboard_lock_y, bb.billboard_lock_x)
+        
     def __eq__(self, other):
         if isinstance(self, other.__class__):
             return self.name == other.name
@@ -131,7 +146,73 @@ class War3Object: # Stores information about an MDL object (not a blender object
         return hash(self.name)
 
 class War3ParticleSystem(War3Object):
-    pass
+    def __init__(self, name, obj, model):
+        War3Object.__init__(self, name)
+        
+        settings = obj.particle_systems[0].settings
+        
+        self.emitter = settings.mdl_particle_sys
+        self.scale_anim = War3AnimationCurve.get(obj.animation_data, 'scale', 2, model.sequences)
+        model.register_global_sequence(self.scale_anim)
+        
+        self.emission_rate_anim = None
+        self.speed_anim = None
+        self.life_span_anim = None
+        self.gravity_anim = None
+        self.variation_anim = None
+        self.latitude_anim = None
+        self.longitude_anim = None
+        self.alpha_anim = None
+        self.ribbon_color_anim = None
+        
+        # Animated properties
+        
+        if settings.animation_data is not None:
+            # curve = fcurves.find("mdl_particle_sys.emission_rate")
+            self.emission_rate_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.emission_rate', 1, model.sequences)
+            model.register_global_sequence(self.emission_rate_anim)
+            
+            #register_global_seq(psys.emission_rate_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.speed")
+            self.speed_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.speed', 1, model.sequences)
+            model.register_global_sequence(self.speed_anim)
+            #register_global_seq(psys.speed_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.life_span")
+            self.life_span_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.life_span', 1, model.sequences)
+            model.register_global_sequence(self.life_span_anim)
+            #register_global_seq(psys.life_span_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.gravity")
+            self.gravity_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.gravity', 1, model.sequences)
+            model.register_global_sequence(self.gravity_anim)
+            #register_global_seq(psys.gravity_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.variation")
+            self.variation_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.variation', 1, model.sequences)
+            model.register_global_sequence(self.variation_anim)
+            #register_global_seq(psys.variation_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.latitude")
+            self.latitude_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.latitude', 1, model.sequences)
+            model.register_global_sequence(self.latitude_anim)
+            #register_global_seq(psys.latitude_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.longitude")
+            self.longitude_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.longitude', 1, model.sequences)
+            model.register_global_sequence(self.longitude_anim)
+            #register_global_seq(psys.longitude_anim, global_seqs)
+                
+            # curve = fcurves.find("mdl_particle_sys.alpha")
+            self.alpha_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.alpha', 1, model.sequences)
+            model.register_global_sequence(self.alpha_anim)
+            #register_global_seq(psys.alpha_anim, global_seqs)
+                
+            # curves = get_curves(settings, "mdl_particle_sys.ribbon_color", (0, 1, 2))
+            self.ribbon_color_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.ribbon_color', 3, model.sequences)
+            model.register_global_sequence(self.ribbon_color_anim)
+            #register_global_seq(psys.ribbon_color_anim, global_seqs, [0])
     
 class War3CollisionShape(War3Object):
     pass
@@ -145,38 +226,51 @@ class War3AnimationSequence:
         self.start = start
         self.end = end
         self.non_looping = non_looping
-        self.movement_speed = movement_speed  
+        self.movement_speed = movement_speed
         
-class War3Animation:
-    def __init__(self, fcurves, data_path, model, scale=1):
+class War3AnimationCurve:
+    def __init__(self, fcurves, data_path, sequences, scale=1):
         frames = set()
         
         self.interpolation = 'Linear'
         self.global_sequence = -1
         self.type = 'Default'
+
+        if 'rotation' in data_path:
+            self.type = 'Rotation'
+        elif 'location' in data_path:
+            self.type = 'Translation'
+        elif 'color' in data_path:
+            self.type = 'Color'
+        elif 'event' in data_path.lower():
+            self.type = 'Event'
+        elif 'visibility' in data_path.lower() or 'hide_render' in data_path.lower():
+            self.type = 'Boolean'
+        
+        f2ms = 1000 / bpy.context.scene.render.fps
         
         for fcurve in fcurves.values():
             if len(fcurve.keyframe_points):
-                if fcurve.keyframe_points[0].interpolation == 'BEZIER':
+                if fcurve.keyframe_points[0].interpolation == 'BEZIER' and self.type != 'Rotation': # Nonlinear interpolation for rotations is disabled for now
                     self.interpolation = 'Bezier'
                 elif fcurve.keyframe_points[0].interpolation == 'CONSTANT':
                     self.interpolation = 'DontInterp'
                     
             for mod in fcurve.modifiers:
                 if mod.type == 'CYCLES':
-                    self.global_sequence = max(self.global_sequence, int(fcurve.range()[1] * model.f2ms)) # f2ms FIXME? GLOBAL?
+                    self.global_sequence = max(self.global_sequence, int(fcurve.range()[1] * f2ms))
                     
             for keyframe in fcurve.keyframe_points:
-                frame = keyframe.co[0] * model.f2ms
-                for sequence in model.sequencences:
-                    if frame >= sequence[1] and frame <= sequence[2]:
+                frame = keyframe.co[0] * f2ms
+                for sequence in sequences:
+                    if frame >= sequence.start and frame <= sequence.end:
                         frames.add(keyframe.co[0])
                         break
 
         if self.global_sequence > 0:
             sequence_list.add(self.global_sequence)
          
-        if data_path in {'visibiliy'}:
+        if self.type == 'Boolean' or self.type == 'Event':
             self.interpolation == 'DontInterp'
          
         self.keyframes = {}
@@ -184,16 +278,21 @@ class War3Animation:
         self.handles_left = {}
         
         for frame in frames:
-            value = []
+            values = []
             handle_left = []
             handle_right = []
             
-            for key in fcurves.keys():
+            keys = fcurves.keys()
+            keys = sorted(keys, key=lambda x: x[1])
+            for key in keys:
                 value = fcurves[key].evaluate(frame)
                 values.append(value * scale)
                 
                 if 'color' in data_path:
                     values = values[::-1] # Colors are stored in reverse
+                    
+                if 'hide_render' in data_path:
+                    values = [1 - v for v in values] # Hide_Render is the opposite of visibility!
                 
                 if self.interpolation == 'Bezier':
                     hl = fcurves[key].evaluate(frame-1)
@@ -201,52 +300,90 @@ class War3Animation:
                     handle_left.append(hl)
                     handle_right.append(hr)
             
-            if data_path == 'rotation_euler':
+            if 'rotation' in data_path and 'quaternion' not in data_path: # Warcraft 3 only uses quaternions!
                 self.keyframes[frame] = tuple(Euler(math.radians(x) for x in values).to_quaternion())
             else:
                 self.keyframes[frame] = tuple(values)
                 
             if self.interpolation == 'Bezier':
-                if data_path == 'rotation_euler':
+                if 'rotation' in data_path and 'quaternion' not in data_path:
                     self.handles_left[frame] = tuple(Euler(math.radians(x) for x in handle_left).to_quaternion())
                     self.handles_right[frame] = tuple(Euler(math.radians(x) for x in handle_right).to_quaternion())
                 else:
                     self.handles_right[frame] = tuple(handle_right)
                     self.handles_left[frame] = tuple(handle_right)
 
-    def transform(self, matrix):
+    def transform_rot(self, matrix):
         for frame in self.keyframes.keys():
-            vec = Vector(self.keyframes[frame])
-            self.keyframes[frame] = matrix.to_quaternion() * q * matrix.inverted().to_quaternion()
+            axis, angle = Quaternion(self.keyframes[frame]).to_axis_angle()
+            
+            axis.rotate(matrix)
+            quat = Quaternion(axis, angle)
+            quat.normalize()
+            
+            self.keyframes[frame] = tuple(quat)
+            
+    def transform_vec(self, matrix):
+        for frame in self.keyframes.keys():
+            self.keyframes[frame] = tuple(matrix * Vector(self.keyframes[frame]))
+            if self.interpolation == 'Bezier':
+                self.handles_right[frame] = tuple(matrix * Vector(self.handles_right[frame]))
+                self.handles_left[frame] = tuple(matrix * Vector(self.handles_left[frame]))
             
         
-    def write_mdl(name, fw, global_seqs, indent="\t"):
+    def write_mdl(self, name, fw, global_seqs, indent="\t"):
+    
+        f2ms = 1000 / bpy.context.scene.render.fps
     
         fw(indent+"%s %d {\n" % (name, len(self.keyframes)))
         
-        fw(indent+"\t%s,\n" % self.interpolation)
+        if self.type != 'Event':
+            fw(indent+"\t%s,\n" % self.interpolation)
         if self.global_sequence > 0:
             fw(indent+"\tGlobalSeqId %d,\n" % global_seqs.index(self.global_sequence))
             
         for frame in sorted(self.keyframes.keys()):
-            fw(indent+"\t%d: { %s, %s, %s, %s },\n" % (f2ms * frame, *(f2s(rnd(x)) for x in self.keyframes[frame])))
-            if self.interpolation == 'Bezier':
-                fw(indent+"\t\tInTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in self.handles_left[frame]))
-                fw(indent+"\t\tOutTan { %s, %s, %s, %s },\n" % tuple(f2s(rnd(x)) for x in self.handles_right[frame]))  
+            line = ""
+            n = len(self.keyframes[frame])
+            
+            if n > 1:
+                line += "{ "
+            
+            line += '%s, '*(n-1)
+            line += '%s'
+            
+            if n > 1:
+                line += ' },\n'
+            else:
+                line += ',\n'
+            
+            if self.type == 'Event':
+                fw(indent+"\t%d,\n" % (frame * f2ms))
+            else:
+                keyframe = self.keyframes[frame]
+                
+                if self.type == 'Rotation':
+                    keyframe = keyframe[1:] + keyframe[:1] # MDL quaternions must be on the form XYZW
+                
+                s = "\t%d: " % (frame * f2ms)
+                fw(indent+s+line % tuple(f2s(rnd(x)) for x in keyframe))
+
+                    
+                if self.interpolation == 'Bezier':
+                    hl = self.handles_left[frame]
+                    hr = self.handles_right[frame]
+                    
+                    if self.type == 'Rotation':
+                        hl = hl[1:]+hl[:1]
+                        hr = hr[1:]+hr[:1]
+                
+                    fw(indent+"\t\tInTan "+line % tuple(f2s(rnd(x)) for x in hl))
+                    fw(indent+"\t\tOutTan "+line % tuple(f2s(rnd(x)) for x in hr))  
            
         fw(indent+"}\n")
         
-    def write_mdx():
+    def write_mdx(self):
         pass
-    
-    @staticmethod
-    def get_global_seq(fcurve):
-
-        if fcurve is not None and fcurve.modifiers:
-            for mod in fcurve.modifiers:
-                if mod.type == 'CYCLES':
-                    return int(fcurve.range()[1] * f2ms)
-        return -1
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
@@ -272,17 +409,17 @@ class War3Animation:
         return hash(tuple(values))
                 
     @staticmethod
-    def get(obj, data_path, num_indices, sequences, scale):
+    def get(anim_data, data_path, num_indices, sequences, scale=1):
         curves = {}
    
-        if obj.animation_data and obj.animation_data.action:
+        if anim_data and anim_data.action:
             for index in range(num_indices):
-                curve = obj.animation_data.action.fcurves.find(data_path, index)
+                curve = anim_data.action.fcurves.find(data_path, index)
                 if curve is not None:
                     curves[(data_path.split('.')[-1], index)] = curve # For now, i'm just interested in the type, not the whole data path. Hence, the split returns the name after the last dot. 
             
         if len(curves):
-            return War3Animation(curves, data_path, sequences, scale)
+            return War3AnimationCurve(curves, data_path, sequences, scale)
         return None
         
 class War3TextureAnim:
@@ -295,32 +432,27 @@ class War3TextureAnim:
         if isinstance(self, other.__class__):
             a = [self.translation, self.rotation, self.scale]
             b = [other.translation, other.rotation, other.scale]
-            
-            if a.count(None) != b.count(None):
-                return False
                 
-            for c1, c2 in zip(a, b):
-                if c1 is not None and c2 is not None:
-                    if c1.keys() != c2.keys():
-                        return False
-                    for key in c1.keys():
-                        if not compare_curves(c1[key], c2[key]):
-                            return False
+            for x, y in zip(a, b):
+                if x != y:
+                    return False
+                
             return True
             
         return NotImplemented
         
     def __hash__(self):
-    
-        value_list = []
-        for c in (self.translation, self.rotation, self.scale):
-            if c is not None:
-                for key in c.keys():
-                    curve = c[key]
-                    value_list.append(get_global_seq(curve))
-                    value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in curve.keyframe_points)
-
-        return hash(tuple(value_list))
+        return hash(tuple(hash(self.translation), hash(self.rotation), hash(self.scale)))
+      
+    @staticmethod
+    def get(anim_data, uv_node, sequences):
+        anim = War3TextureAnim()
+        if anim_data.action:
+            anim.translation = War3AnimationCurve.get(anim_data, 'translation', 3, sequences)
+            anim.rotation = War3AnimationCurve.get(anim_data, 'rotation', 3, sequences)
+            anim.scale = War3AnimationCurve.get(anim_data, 'scale', 3, sequences)
+                    
+        return anim if any((anim.translation, anim.rotation, anim.scale)) else None
         
 class War3GeosetAnim:
     def __init__(self, color, color_anim, alpha_anim):
@@ -333,37 +465,25 @@ class War3GeosetAnim:
         if isinstance(self, other.__class__):
             if self.color != other.color and not any((self.color_anim, other.color_anim)): # Color doesn't matter if there is an animation
                 return False
-            if not self.geoset is other.geoset:
+                
+            if self.geoset is not other.geoset:
                 return False
-            if not compare_curves(self.alpha_anim, other.alpha_anim):
+                
+            if self.alpha_anim != other.alpha_anim:
                 return False
-            if all((self.color_anim, other.color_anim)):
-                if self.color_anim.keys() != other.color_anim.keys():
-                    return False
-                for key in self.color_anim.keys():
-                    if not compare_curves(self.color_anim[key], other.color_anim[key]):
-                        return False
+                
+            if self.color_anim != other.color_anim:
+                return False
+                
+            return True
             
-            return not any((self.color_anim, other.color_anim))
         return NotImplemented 
         
     def __ne__(self, other):
         return not self.__eq__(other)
         
     def __hash__(self):
-        # return hash(tuple(sorted(self.__dict__.items())))
-        alpha_keys = None
-        value_list = []
-        if self.alpha_anim is not None:      
-            value_list.append(get_global_seq(self.alpha_anim))
-            value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in self.alpha_anim.keyframe_points)
-        if self.color_anim is not None:
-            for key in self.color_anim.keys():
-                curve = self.color_anim[key]
-                value_list.append(get_global_seq(curve))
-                value_list.append((*k.co, *k.handle_left, *k.handle_right, k.interpolation) for k in curve.keyframe_points)
-
-        return hash(tuple((self.color, *value_list)))
+        return hash((self.color, hash(self.color_anim), hash(self.alpha_anim), hash(self.color)))
         
 class War3Geoset:
     def __init__(self):
@@ -378,7 +498,7 @@ class War3Geoset:
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
-            return self.mat_name == other.mat_name and self.geoset_anim is other.geoset_anim
+            return self.mat_name == other.mat_name and self.geoset_anim == other.geoset_anim
         return NotImplemented
         
     def __ne__(self, other):
@@ -386,11 +506,11 @@ class War3Geoset:
         
     def __hash__(self):
         # return hash(tuple(sorted(self.__dict__.items())))
-        return hash((self.mat_name, self.geoset_anim)) # Different geoset anims should split geosets
+        return hash((self.mat_name, hash(self.geoset_anim))) # Different geoset anims should split geosets
         
 class War3MaterialLayer:
     def __init__(self):
-        self.texture = default_texture
+        self.texture = "Textures\white.blp"
         self.filter_mode = "None"
         self.unshaded = False
         self.two_sided = False
@@ -400,19 +520,6 @@ class War3MaterialLayer:
         self.alpha_value = 1
         self.no_depth_test = False
         self.no_depth_set = False
-     
-    @staticmethod
-    def get_filter_mode(tag):
-        if tag == 'ADD':
-            return 'Additive'
-        elif tag == 'MIX':
-            return 'Blend'
-        elif tag == 'MULTIPLY':
-            return 'Modulate'
-        elif tag == 'SOFT_LIGHT' or tag == 'SCREEN':
-            return 'AddAlpha'
-        
-        return 'None'
         
     def __eq__(self, other):
         if isinstance(self, other.__class__):
@@ -432,6 +539,52 @@ class War3Material:
         self.use_const_color = False
         self.priority_plane = 0
         
+    @staticmethod    
+    def get(mat, model):
+        material = War3Material(mat.name)
+        
+        # Should we use vertex color?
+        for geoset in model.geosets.values():
+            if geoset.geoset_anim is not None and geoset.mat_name == mat.name:
+                if any((geoset.geoset_anim.color, geoset.geoset_anim.color_anim)):
+                    material.use_const_color = True
+                
+        
+        material.priority_plane = mat.priority_plane
+        material.layers = []
+        
+        for i, layer_settings in enumerate(mat.mdl_layers):    
+            layer = War3MaterialLayer()
+            
+            layer.texture = layer_settings.path if layer_settings.texture_type == '0' else "ReplaceableId %s" % layer_settings.texture_type
+            if layer_settings.texture_type == '36':
+                layer.texture = "ReplaceableId %s" % layer_settings.replaceable_id
+                
+            layer.filter_mode   = layer_settings.filter_mode
+            layer.unshaded      = layer_settings.unshaded
+            layer.two_sided     = layer_settings.two_sided
+            layer.no_depth_test = layer_settings.no_depth_test
+            layer.no_depth_set  = layer_settings.no_depth_set
+            layer.alpha_value   = layer_settings.alpha
+            layer.alpha_anim    = War3AnimationCurve.get(mat.animation_data, 'mdl_layers[%d].alpha' % i, 1, model.sequences) # get_curve(mat, {'mdl_layers[%d].alpha' % i})
+            
+            if mat.use_nodes:
+                uv_node = mat.node_tree.nodes.get(layer_settings.name, None)
+                if uv_node is not None and mat.node_tree.animation_data is not None:
+                    layer.texture_anim = War3TextureAnim.get(mat.node_tree.animation_data, uv_node, model.sequences)
+                    if layer.texture_anim is not None:
+                        model.register_global_sequence(layer.texture_anim.translation)
+                        model.register_global_sequence(layer.texture_anim.rotation)
+                        model.register_global_sequence(layer.texture_anim.scale)
+    
+            material.layers.append(layer)
+                
+        
+        if not len(material.layers):
+            material.layers.append(War3MaterialLayer())
+        
+        return material
+        
     def __eq__(self, other):
         if isinstance(self, other.__class__):
             return self.name == other.name
@@ -443,3 +596,6 @@ class War3Material:
     def __hash__(self):
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.name)
+        
+    def write_mdl(fw):
+        pass

@@ -57,7 +57,21 @@ def set_sequence_name(self, value):
     
 def get_sequence_name(self):
     return self.name
-
+    
+def get_sequence_start(self):
+    scene = bpy.context.scene
+    if not len(scene.mdl_sequences):
+        return 0
+    # active_sequence = scene.mdl_sequences[scene.mdl_sequence_index]
+    return min(tuple(m.frame for m in scene.timeline_markers if m.name == self.name))
+            
+def get_sequence_end(self):
+    scene = bpy.context.scene
+    if not len(scene.mdl_sequences):
+        return 0
+    # active_sequence = scene.mdl_sequences[scene.mdl_sequence_index]
+    return max(tuple(m.frame for m in scene.timeline_markers if m.name == self.name))
+    
 class War3SequenceProperties(PropertyGroup):
 
     # Backing field
@@ -71,7 +85,17 @@ class War3SequenceProperties(PropertyGroup):
 
     name = StringProperty(
         name = "",
-        default = "Sequence",
+        default = "Sequence"
+        )
+        
+    start = IntProperty(
+        name = "",
+        get = get_sequence_start
+        )
+        
+    end = IntProperty(
+        name = "",
+        get = get_sequence_end
         )
 
     rarity = IntProperty(
