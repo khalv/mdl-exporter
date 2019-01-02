@@ -32,7 +32,7 @@ Whenever you create two timeline markers with the same name, a sequence will sho
 ![Sequence Editor](https://raw.githubusercontent.com/khalv/mdl-exporter/master/images/Sequence%20Editor.jpg)
 
 #### Global Sequences
-Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. Only the first channel (X for scale/rotation/translation, R for RGB color) is checked for a modifier. 
+Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. It is enough that one of the f-curves in a group has a modifier for a global sequence to be created. 
 
 ### Billboarding
 Bones, lights and attachment points all support billboarding. A billboarding settings panel will automatically appear in the "object" properties tab when a relevant object is selected. You can constrain billboarding to a certain axis by checking the "Billboard Lock X/Y/Z" checkboxes respectively.
@@ -43,7 +43,7 @@ To create an attachment point, simply create an empty object and give it a name 
 ### Event Objects
 Similar to attachments, event objects are created by giving an empty object a name which starts with an event type ("UBR" for UberSplat, "SND" for Sound, "FTP" for FootPrint, "SPL" for BloodSplat). The type is followed by a number ID (can be 'x'), and ends with the event identifier. An example of an event object is "SND1DHLB", which would produce a "Human Building Death (large)" sound. To animate the event, create a custom property called "eventtrack" and animate its value - the positions of the keyframes are used to trigger the event.
 
-There is a helper operator for creating event objects which you can find by pressing the spacebar and searching for "Add MDL event track". These will give you fields where you can select the exact type and ID name from a list of names.
+There is a helper operator for creating event objects which you can find by pressing the spacebar and searching for "Add MDL event track". These will give you fields where you can select the exact type and ID name from a list of names. In the future, the list will be searchable.
 
 ### Collision Shapes
 Collision shapes in Warcraft are used primarily to define the selectable area of a unit. You can create theese by adding any geometric shape and naming it "CollisionBox" or "CollisionSphere". The exporter will use the bounds to calculate a radius or min/max points automatically. Note that collision boxes are always saved as axis aligned. There is a helper operator for quickly creating collision shapes named "Add MDL Collison Shape".
@@ -58,5 +58,12 @@ Create a light and go to the data tab where you will find a panel called "MDL Li
 The exporter has a custom editor for configuring particle systems. The data piggybacks on the Blender ParticleSystemSettings data block, so you need to create a particle system to make the MDL particle editor appear. This also allows for shared particle data among emitters - just remember to make it single-user first if you copy one so that you don't overwrite your old data. I've chosen to name the emitters "Model Emitter", and "Particle Emitter" rather than "ParticleEmitter" and "ParticleEmitter2", since it's more descriptive of what they do. Ribbons are also supported. The bounds of whatever object the particle system is attached to defines the width and height of the emitter - animating the X/Y scale of the object will animate the width and length of the exported emitter. Make sure not to apply the scale of the emitter since this will set the width/length to be 1 regardless of the actual emitter size (fix for this is in the works). 
 
 ![Particle Editor](https://github.com/khalv/mdl-exporter/blob/master/images/Particle%20Editor.jpg)
+
+### Known Issues
+
+* Auto-generated bones will not corrently parent themselves to other auto-generated bones. This can create errors. It is good practice to always have all meshes parented to a bone. 
+* Armatures always have to be on the top of their respective hierarchies - you can't have an armature as a child of another object (this will be fixed). 
+* When using empties as bones: all translation animations will be transformed to be relative to the object on the first frame, since Blender stores animations in absolute world position while MDL models store translation as relative to the rest pose and parent. This might cause some issues in situations where the bone is a child of a bone with a rotation animation, though i'm not sure. 
+* Support for animated witdh/length for particle systems is currently broken. 
 
 
