@@ -26,17 +26,16 @@ def calc_extents(vertices):
 
 def prepare_mesh(obj, context, matrix):
     mod = None
-    if obj.data.use_auto_smooth:
+    if hasattr(obj.data, "use_auto_smooth") and obj.data.use_auto_smooth:
         mod = obj.modifiers.new("EdgeSplitExport", 'EDGE_SPLIT')
         mod.split_angle = obj.data.auto_smooth_angle
         # mod.use_edge_angle = True
         
     mesh = obj.to_mesh(context.scene, apply_modifiers=True, settings='RENDER')
     
-    if obj.data.use_auto_smooth:
+    if mod is not None:
         obj.modifiers.remove(mod)
 
-    # Triangulate for web export
     bm = bmesh.new()
     bm.from_mesh(mesh)
     # If an object has had a negative scale applied, normals will be inverted. This will fix that. 
