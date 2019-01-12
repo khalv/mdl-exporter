@@ -204,7 +204,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 collider.radius = global_matrix.median_scale * max(abs(x * obj.empty_draw_size) for x in obj.scale)
                 model.objects['collisionshape'].add(collider)
 
-        elif obj.type == 'MESH':
+        elif obj.type == 'MESH' or obj.type == 'CURVE':
+            print(obj.type)
             mesh = prepare_mesh(obj, context, global_matrix * obj.matrix_world)
             # mesh.transform(global_matrix * obj.matrix_world)
             
