@@ -266,9 +266,6 @@ class War3AnimationCurve:
                     if frame >= sequence.start and frame <= sequence.end:
                         frames.add(keyframe.co[0])
                         break
-
-        if self.global_sequence > 0:
-            sequence_list.add(self.global_sequence)
          
         if self.type == 'Boolean' or self.type == 'Event':
             self.interpolation == 'DontInterp'
@@ -301,7 +298,7 @@ class War3AnimationCurve:
                     handle_right.append(hr)
             
             if 'rotation' in data_path and 'quaternion' not in data_path: # Warcraft 3 only uses quaternions!
-                self.keyframes[frame] = tuple(Euler(math.radians(x) for x in values).to_quaternion())
+                self.keyframes[frame] = tuple(Euler(values).to_quaternion())
             else:
                 self.keyframes[frame] = tuple(values)
                 

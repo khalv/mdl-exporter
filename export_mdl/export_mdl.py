@@ -118,7 +118,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     objs = []
     
     current_frame = scene.frame_current
-    scene.frame_set(1)
+    scene.frame_set(0)
     
     if use_selection:
         objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
@@ -352,11 +352,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     bone.parent = parent
                 bone.pivot = global_matrix * Vector(obj.location)
                 bone.anim_loc = anim_loc
+                if bone.anim_scale is not None:
+                    model.register_global_sequence(bone.anim_scale)
                 if bone.anim_loc is not None:
+                    model.register_global_sequence(bone.anim_loc)
                     bone.anim_loc.transform_vec(obj.matrix_world.inverted())
                     bone.anim_loc.transform_vec(global_matrix)
                 bone.anim_rot = anim_rot
                 if bone.anim_rot is not None:
+                    model.register_global_sequence(bone.anim_rot)
                     bone.anim_rot.transform_rot(obj.matrix_world.inverted())
                     bone.anim_rot.transform_rot(global_matrix)
                 bone.anim_scale = anim_scale
@@ -382,16 +386,20 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 bone.anim_scale = War3AnimationCurve.get(obj.animation_data, datapath % 'scale', 3, model.sequences) # get_curves(obj, datapath % 'scale', (0, 1, 2))
                 # register_global_seq(bone.anim_scale, global_seqs, [('scale', 0)])
                 
+                model.register_global_sequence(bone.anim_scale)
+                
                 if bone.anim_loc is not None:
                     # m = obj.matrix_world * b.bone.matrix_local
                     m = obj.matrix_world * b.bone.matrix_local
                     bone.anim_loc.transform_vec(global_matrix * m.to_quaternion().to_matrix().to_4x4())
+                    model.register_global_sequence(bone.anim_loc)
                     
                 if bone.anim_rot is not None:
                     mat_pose_ws = obj.matrix_world * b.bone.matrix_local
                     mat_rest_ws = obj.matrix_world * b.matrix
                     bone.anim_rot.transform_rot(mat_pose_ws)
                     bone.anim_rot.transform_rot(global_matrix)
+                    model.register_global_sequence(bone.anim_rot)
                     # bone.anim_rot.transform_rot(mat_rest_ws.inverted())
                 
                 model.objects['bone'].add(bone)

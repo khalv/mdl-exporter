@@ -48,7 +48,7 @@ def prepare_mesh(obj, context, matrix):
     bm.free()
     del bm
 
-    mesh.calc_normals_split()
+    # mesh.calc_normals_split()
     mesh.calc_tessface()
 
     return mesh
