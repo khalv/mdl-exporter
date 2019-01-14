@@ -263,7 +263,7 @@ class War3AnimationCurve:
             for keyframe in fcurve.keyframe_points:
                 frame = keyframe.co[0] * f2ms
                 for sequence in sequences:
-                    if frame >= sequence.start and frame <= sequence.end:
+                    if frame >= sequence.start and frame <= sequence.end or self.global_sequence > 0:
                         frames.add(keyframe.co[0])
                         break
          

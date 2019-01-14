@@ -50,6 +50,14 @@ def get_sequences(scene):
         
     return sequences
     
+def get_visibility(obj, model):
+    if obj.animation_data is not None:
+        curve = War3AnimationCurve.get(obj.animation_data, 'hide_render', 1, model.sequences)
+        if curve is not None:
+            return curve
+    if obj.parent is not None and obj.parent_type != 'BONE':
+            return get_visibility(obj.parent, model)
+    return None
             
 def get_parent(obj):
     parent = obj.parent
@@ -136,8 +144,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             billboard_lock = (bb.billboard_lock_z, bb.billboard_lock_y, bb.billboard_lock_x) # NOTE: Axes are listed backwards (same as with colors)
         
         # Animations
-        visibility = War3AnimationCurve.get(obj.animation_data, 'hide_render', 1, model.sequences) # get_curve(obj, ['hide_render', 'hide_view', '["visibility"]'])
-        # register_global_seq(visibility, global_seqs)
+        visibility = get_visibility(obj, model)
             
         anim_loc = War3AnimationCurve.get(obj.animation_data, 'location', 3, model.sequences) # get_curves(obj, 'location', (0, 1, 2))
         # register_global_seq(anim_loc, global_seqs, [('location', 0)])
@@ -169,6 +176,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
                 psys.parent = parent
                 psys.visibility = visibility
+                model.register_global_sequence(psys.visibility)
                 
                 if psys.emitter.emitter_type == 'ParticleEmitter':
                     model.objects['particle'].add(psys)
@@ -344,6 +352,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 att.pivot = global_matrix * Vector(obj.location)
                 att.parent = parent
                 att.visibility = visibility
+                model.register_global_sequence(visibility)
                 att.billboarded = billboarded
                 att.billboard_lock = billboard_lock
                 model.objects['attachment'].add(att)
@@ -353,17 +362,20 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     bone.parent = parent
                 bone.pivot = global_matrix * Vector(obj.location)
                 bone.anim_loc = anim_loc
-                if bone.anim_scale is not None:
-                    model.register_global_sequence(bone.anim_scale)
+                
+                model.register_global_sequence(bone.anim_scale)
+                
                 if bone.anim_loc is not None:
                     model.register_global_sequence(bone.anim_loc)
                     bone.anim_loc.transform_vec(obj.matrix_world.inverted())
                     bone.anim_loc.transform_vec(global_matrix)
+                    
                 bone.anim_rot = anim_rot
                 if bone.anim_rot is not None:
                     model.register_global_sequence(bone.anim_rot)
                     bone.anim_rot.transform_rot(obj.matrix_world.inverted())
                     bone.anim_rot.transform_rot(global_matrix)
+                    
                 bone.anim_scale = anim_scale
                 bone.billboarded = billboarded
                 bone.billboard_lock = billboard_lock
@@ -447,6 +459,7 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 # register_global_seq(light.amb_intensity_anim, global_seqs)
                     
             light.visibility = visibility
+            model.register_global_sequence(visibility)
             model.objects['light'].add(light)
         elif obj.type == 'CAMERA':
             model.cameras.append(obj)
