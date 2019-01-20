@@ -404,7 +404,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 if bone.anim_loc is not None:
                     # m = obj.matrix_world * b.bone.matrix_local
                     m = obj.matrix_world * b.bone.matrix_local
-                    bone.anim_loc.transform_vec(global_matrix * m.to_quaternion().to_matrix().to_4x4())
+                    # bone.anim_loc.transform_vec(global_matrix * m.to_quaternion().to_matrix().to_4x4())
+                    bone.anim_loc.transform_vec(global_matrix * m.to_3x3().to_4x4())
                     model.register_global_sequence(bone.anim_loc)
                     
                 if bone.anim_rot is not None:
