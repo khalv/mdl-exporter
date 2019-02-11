@@ -34,11 +34,12 @@ Whenever you create two timeline markers with the same name, a sequence will sho
 #### Global Sequences
 Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. It is enough that one of the f-curves in a group has a modifier for a global sequence to be created. 
 
-## Keyframe Optimization 
-At the moment, IK controllers are only supported through resampling the entire animation into keyframes. This produces very dense data, so for these cases there is the option of applying a keyframe reduction algorithm to your animations based on a tolerance value. Two things to note about this feature:
+### Keyframe Optimization 
+At the moment, IK controllers are only supported through resampling the entire animation into keyframes. This produces very dense data, so for these cases there is the option of applying a keyframe reduction algorithm to your animations based on a tolerance value. Three things to note about this feature:
 
  * All animations optimized this way will have their interpolation forced to "Linear". This might be a desireable effect though, since it can further reduce file size. 
  * The tolerance threshold is the same for both rotations, translation and scale. For translation and scale, the value represents the maximum distance in meters that a path can diverge before a keyframe is inserted. For rotation, this value is in the range of 0-2, where 0 means that the rotation is identical to the optimized frame, and 2 means they are anti-parallel. This distinction is important since some animation types can be more affected by the threshold than others. 
+ * The optimizer works by recursively subdividing the sequence, adding new frames at whatever points produce the largest deviation from the original animation. However, it can only insert such keyframes in places where there was already a frame in the original animation, and as such it is not guaranteed to always produce the most optimal animation for any given motion, though it still produces good results. 
 
 The algorithm used is based on this paper:
 https://www.researchgate.net/publication/4343370_Keyframe_Reduction_Techniques_for_Motion_Capture_Data
