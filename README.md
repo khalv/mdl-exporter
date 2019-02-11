@@ -34,7 +34,7 @@ Whenever you create two timeline markers with the same name, a sequence will sho
 #### Global Sequences
 Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. It is enough that one of the f-curves in a group has a modifier for a global sequence to be created. 
 
-### Keyframe Optimization 
+#### Keyframe Optimization 
 At the moment, IK controllers are only supported through resampling the entire animation into keyframes. This produces very dense data, so for these cases there is the option of applying a keyframe reduction algorithm to your animations based on a tolerance value. Three things to note about this feature:
 
  * All animations optimized this way will have their interpolation forced to "Linear". This might be a desireable effect though, since it can further reduce file size. 
