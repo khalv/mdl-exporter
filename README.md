@@ -34,6 +34,15 @@ Whenever you create two timeline markers with the same name, a sequence will sho
 #### Global Sequences
 Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. It is enough that one of the f-curves in a group has a modifier for a global sequence to be created. 
 
+## Keyframe Optimization 
+At the moment, IK controllers are only supported through resampling the entire animation into keyframes. This produces very dense data, so for these cases there is the option of applying a keyframe reduction algorithm to your animations based on a tolerance value. Two things to note about this feature:
+
+ * All animations optimized this way will have their interpolation forced to "Linear". This might be a desireable effect though, since it can further reduce file size. 
+ * The tolerance threshold is the same for both rotations, translation and scale. For translation and scale, the value represents the maximum distance in meters that a path can diverge before a keyframe is inserted. For rotation, this value is in the range of 0-2, where 0 means that the rotation is identical to the optimized frame, and 2 means they are anti-parallel. This distinction is important since some animation types can be more affected by the threshold than others. 
+
+The algorithm used is based on this paper:
+https://www.researchgate.net/publication/4343370_Keyframe_Reduction_Techniques_for_Motion_Capture_Data
+
 ### Billboarding
 Bones, lights and attachment points all support billboarding. A billboarding settings panel will automatically appear in the "object" properties tab when a relevant object is selected. You can constrain billboarding to a certain axis by checking the "Billboard Lock X/Y/Z" checkboxes respectively.
 
