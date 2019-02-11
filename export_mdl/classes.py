@@ -240,6 +240,8 @@ class War3AnimationCurve:
             self.type = 'Rotation'
         elif 'location' in data_path:
             self.type = 'Translation'
+        elif 'scale' in data_path:
+            self.type = 'Scale'
         elif 'color' in data_path:
             self.type = 'Color'
         elif 'event' in data_path.lower():
@@ -263,16 +265,23 @@ class War3AnimationCurve:
             for keyframe in fcurve.keyframe_points:
                 frame = keyframe.co[0] * f2ms
                 for sequence in sequences:
-                    if frame >= sequence.start and frame <= sequence.end or self.global_sequence > 0:
+                    if (frame >= sequence.start and frame <= sequence.end) or self.global_sequence > 0:
                         frames.add(keyframe.co[0])
                         break
          
+        # We want start and end keyframes for each sequence. Make sure not to do this for events and global sequences, though!
+        if self.global_sequence < 0 and self.type in {'Rotation', 'Translation', 'Scale'}:
+            for sequence in sequences:
+                frames.add(sequence.start / f2ms)
+                frames.add(sequence.end / f2ms)
+            
         if self.type == 'Boolean' or self.type == 'Event':
             self.interpolation == 'DontInterp'
          
         self.keyframes = {}
         self.handles_right = {}
         self.handles_left = {}
+        self.curves = []
         
         for frame in frames:
             values = []
@@ -282,6 +291,7 @@ class War3AnimationCurve:
             keys = fcurves.keys()
             keys = sorted(keys, key=lambda x: x[1])
             for key in keys:
+                self.curves.append(fcurves[key])
                 value = fcurves[key].evaluate(frame)
                 values.append(value * scale)
                 
@@ -309,6 +319,58 @@ class War3AnimationCurve:
                 else:
                     self.handles_right[frame] = tuple(handle_right)
                     self.handles_left[frame] = tuple(handle_right)
+    
+    def split_segment(self, start, end, tolerance):
+        n = float(end[0] - start[0])
+        error = -1
+        frame = 0
+        # print('Start: %d, End: %d, Range: %f' % (start[0], end[0], n))
+        
+        for i in (i for i in range(start[0], end[0]) if i in self.keyframes.keys()):
+            middle = self.keyframes[i]
+            distance = 0
+            t = max(0, min(1, float(i - start[0]) / n)) # Interpolation factor
+            if self.type == 'Translation' or self.type == 'Scale':
+                a = Vector(start[1])
+                b = Vector(middle)
+                c = Vector(end[1])
+                delta = b - a.lerp(c, t)
+                distance = delta.magnitude # Just the linear distance, for now
+            elif self.type == 'Rotation':
+                distance = 1 - Quaternion(middle).dot(Quaternion(start[1]).slerp(Quaternion(end[1]), t)) # Spherical distance in the range of 0-2
+                
+            if distance > error:
+                error = distance
+                frame = i
+                
+        if error > 0 and error > tolerance:
+            middle = (frame, self.keyframes[frame])
+            result = [middle]
+            if frame != start[0] and frame != end[0]: # Prevents infinite recursion
+                result += self.split_segment(start, middle, tolerance)
+                result += self.split_segment(middle, end, tolerance)
+                return result
+                
+        return []
+    
+    def optimize(self, tolerance, sequences):
+        
+        f2ms = 1000 / bpy.context.scene.render.fps
+        
+        if self.interpolation == 'Bezier':
+            self.interpolation = 'Linear' # This feature doesn't support bezier as of right now
+        
+        newKeys = []
+        for sequence in sequences:
+            start = int(sequence.start / f2ms)
+            end = int(sequence.end / f2ms)
+            newKeys += [(start, self.keyframes[start]), (end, self.keyframes[end])]
+            newKeys += self.split_segment((start, self.keyframes[start]) , (end, self.keyframes[end]), tolerance)
+        
+        print('Before: %d' % len(self.keyframes))
+        self.keyframes.clear()
+        self.keyframes.update(newKeys)
+        print('After: %d' % len(self.keyframes))
 
     def transform_rot(self, matrix):
         for frame in self.keyframes.keys():

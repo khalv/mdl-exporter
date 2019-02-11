@@ -90,7 +90,7 @@ def write_billboard(fw, billboarded, billboard_lock):
     if billboarded == True:
         fw("\tBillboarded,\n")
     
-def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, **kwargs):
+def save(operator, context, filepath="", mdl_version=800, global_matrix=None, use_selection=False, optimize_animation=False, optimize_tolerance=0, **kwargs):
 
     # -- Global constants -- #
     global f2ms
@@ -109,7 +109,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
     scene = context.scene
     model = War3Model(context)
     model.sequences = model.get_sequences(scene)
-
     
     # geosets = {}
     # materials = set()
@@ -147,16 +146,22 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
         visibility = get_visibility(obj, model)
             
         anim_loc = War3AnimationCurve.get(obj.animation_data, 'location', 3, model.sequences) # get_curves(obj, 'location', (0, 1, 2))
+        if anim_loc is not None and optimize_animation:
+            anim_loc.optimize(optimize_tolerance, model.sequences)
         # register_global_seq(anim_loc, global_seqs, [('location', 0)])
             
         anim_rot = War3AnimationCurve.get(obj.animation_data, 'rotation_quaternion', 4, model.sequences) # get_curves(obj, 'rotation_quaternion', (0, 1, 2, 3))
         
         if anim_rot is None:
             anim_rot = War3AnimationCurve.get(obj.animation_data, 'rotation_euler', 3, model.sequences)
+            
+        if anim_rot is not None and optimize_animation:
+            anim_rot.optimize(optimize_tolerance, model.sequences)
         # register_global_seq(anim_rot, global_seqs, [('rotation_quaternion', 0)])
             
         anim_scale = War3AnimationCurve.get(obj.animation_data, 'scale', 3, model.sequences) # get_curves(obj, 'scale', (0, 1, 2))
-        
+        if anim_scale is not None and optimize_animation:
+            anim_scale.optimize(optimize_tolerance, model.sequences)
         # if anim_scale is not None:
         #     register_global_seq(anim_scale, global_seqs, anim_scale.keys()) # Special case to allow for particle systems to animate width/length individually
             
@@ -213,7 +218,6 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 model.objects['collisionshape'].add(collider)
 
         elif obj.type == 'MESH' or obj.type == 'CURVE':
-            print(obj.type)
             mesh = prepare_mesh(obj, context, global_matrix * obj.matrix_world)
             # mesh.transform(global_matrix * obj.matrix_world)
             
@@ -390,14 +394,20 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 datapath = 'pose.bones[\"'+b.name+'\"].%s'
                 bone.anim_loc = War3AnimationCurve.get(obj.animation_data, datapath % 'location', 3, model.sequences) # get_curves(obj, datapath % 'location', (0, 1, 2))
                 # register_global_seq(bone.anim_loc, global_seqs, [('location', 0)])
+                if optimize_animation and bone.anim_loc is not None:
+                    bone.anim_loc.optimize(optimize_tolerance, model.sequences)
 
                 bone.anim_rot = War3AnimationCurve.get(obj.animation_data, datapath % 'rotation_quaternion', 4, model.sequences) # get_curves(obj, datapath % 'rotation_quaternion', (0, 1, 2, 3))
                 if bone.anim_rot is None:
                     bone.anim_rot = War3AnimationCurve.get(obj.animation_data, datapath % 'rotation_euler', 3, model.sequences)
+                if optimize_animation and bone.anim_rot is not None:
+                    bone.anim_rot.optimize( optimize_tolerance, model.sequences)
                 # register_global_seq(bone.anim_rot, global_seqs, [('rotation_quaternion', 0)])
 
                 bone.anim_scale = War3AnimationCurve.get(obj.animation_data, datapath % 'scale', 3, model.sequences) # get_curves(obj, datapath % 'scale', (0, 1, 2))
                 # register_global_seq(bone.anim_scale, global_seqs, [('scale', 0)])
+                if optimize_animation and bone.anim_scale is not None:
+                    bone.anim_scale.optimize(optimize_tolerance, model.sequences)
                 
                 model.register_global_sequence(bone.anim_scale)
                 
