@@ -243,14 +243,15 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
             bone = None
             if (armature is None and parent is None) or is_animated:
                 bone = War3Object(obj.name) # Object is animated or parent is missing - create a bone for it!
-                if not obj.name.startswith("Bone_"):
-                    bone.name = "Bone_"+obj.name
                 
                 bone.parent = parent # Remember to make it the parent - parent is added to matrices further down
                 bone.pivot = global_matrix * Vector(obj.location)
                 bone.anim_loc = anim_loc
                 bone.anim_rot = anim_rot
                 bone.anim_scale = anim_scale
+                model.register_global_sequence(bone.anim_loc)
+                model.register_global_sequence(bone.anim_rot)
+                model.register_global_sequence(bone.anim_scale)
                 bone.matrix = global_matrix * obj.matrix_world.inverted()
                 bone.billboarded = billboarded
                 bone.billboard_lock = billboard_lock
@@ -297,7 +298,9 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     if armature is not None:
                         vgroups = sorted(mesh.vertices[vert].groups[:], key=lambda x:x.weight, reverse=True) # Sort bones by descending weight
                         if len(vgroups):
-                            groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if obj.vertex_groups[vg.group].name in bone_names)[:3]
+                            groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if (obj.vertex_groups[vg.group].name in bone_names and vg.weight > 0.25))[:3]
+                            if not len(groups):
+                                groups = [parent]
                     elif parent is not None:
                         groups = [parent]
                                 
@@ -366,6 +369,8 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     bone.parent = parent
                 bone.pivot = global_matrix * Vector(obj.location)
                 bone.anim_loc = anim_loc
+                bone.anim_scale = anim_scale
+                bone.anim_rot = anim_rot
                 
                 model.register_global_sequence(bone.anim_scale)
                 
@@ -374,21 +379,51 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                     bone.anim_loc.transform_vec(obj.matrix_world.inverted())
                     bone.anim_loc.transform_vec(global_matrix)
                     
-                bone.anim_rot = anim_rot
                 if bone.anim_rot is not None:
                     model.register_global_sequence(bone.anim_rot)
                     bone.anim_rot.transform_rot(obj.matrix_world.inverted())
                     bone.anim_rot.transform_rot(global_matrix)
                     
-                bone.anim_scale = anim_scale
                 bone.billboarded = billboarded
                 bone.billboard_lock = billboard_lock
                 model.objects['bone'].add(bone)
         elif obj.type == 'ARMATURE':
+            root = War3Object(obj.name)
+            if parent is not None:
+                root.parent = parent
+                
+            root.pivot = global_matrix * Vector(obj.location)
+            
+            root.anim_loc = anim_loc
+            root.anim_scale = anim_scale
+            root.anim_rot = anim_rot
+            
+            model.register_global_sequence(root.anim_scale)
+            
+            if root.anim_loc is not None:
+                model.register_global_sequence(root.anim_loc)
+                root.anim_loc.transform_vec(obj.matrix_world.inverted())
+                root.anim_loc.transform_vec(global_matrix)
+                
+            if root.anim_rot is not None:
+                model.register_global_sequence(root.anim_rot)
+                root.anim_rot.transform_rot(obj.matrix_world.inverted())
+                root.anim_rot.transform_rot(global_matrix)
+            
+            root.visibility = visibility
+            model.register_global_sequence(visibility)
+            root.billboarded = billboarded
+            root.billboard_lock = billboard_lock
+            model.objects['bone'].add(root)
+            
+            
             for b in obj.pose.bones:
                 bone = War3Object(b.name)
                 if b.parent is not None:
                     bone.parent = b.parent.name
+                else:
+                    bone.parent = root.name
+                    
                 bone.pivot = obj.matrix_world * Vector(b.bone.head_local) # Armature space to world space
                 bone.pivot = global_matrix * Vector(bone.pivot) # Axis conversion
                 datapath = 'pose.bones[\"'+b.name+'\"].%s'
@@ -849,7 +884,12 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
         # HELPERS
         for helper in model.objects['helper']:
-            fw("Helper \"%s\" {\n" % helper.name)
+            name = helper.name.replace('.', '_')
+            
+            if not name.lower().startswith("bone"):
+                name = "Bone_"+name
+        
+            fw("Helper \"%s\" {\n" % name)
             if len(object_indices) > 1:
                 fw("\tObjectId %d,\n" % object_indices[helper.name])
                 
