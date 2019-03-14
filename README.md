@@ -71,8 +71,6 @@ The exporter has a custom editor for configuring particle systems. The data pigg
 
 ### Known Issues
 
-* Auto-generated bones will not corrently parent themselves to other auto-generated bones. This can create errors. It is good practice to always have all meshes parented to a bone. 
-* Armatures always have to be on the top of their respective hierarchies - you can't have an armature as a child of another object (this will be fixed). 
 * When using empties as bones: all translation animations will be transformed to be relative to the object on the first frame, since Blender stores animations in absolute world position while MDL models store translation as relative to the rest pose and parent. This might cause some issues in situations where the bone is a child of a bone with a rotation animation, though i'm not sure. 
 * Support for animated witdh/length for particle systems is currently broken. 
 
