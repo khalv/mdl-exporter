@@ -176,12 +176,34 @@ def save(operator, context, filepath="", mdl_version=800, global_matrix=None, us
                 
                 psys.pivot = global_matrix * Vector(obj.location)
                 
-                psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.scale)
-                psys.dimensions = Vector(map(abs, global_matrix * psys.dimensions))
+                # psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.scale)
+                psys.dimensions = Vector(map(abs, global_matrix * obj.dimensions))
                 
                 psys.parent = parent
                 psys.visibility = visibility
                 model.register_global_sequence(psys.visibility)
+                
+                if is_animated:
+                    bone = War3Object(obj.name)
+                    bone.parent = parent
+                    bone.pivot = global_matrix * Vector(obj.location)
+                    bone.anim_loc = anim_loc
+                    bone.anim_rot = anim_rot
+                    bone.anim_scale = anim_scale
+                    model.register_global_sequence(bone.anim_loc)
+                    model.register_global_sequence(bone.anim_rot)
+                    model.register_global_sequence(bone.anim_scale)
+                    
+                    if bone.anim_loc is not None:
+                        bone.anim_loc.transform_vec(global_matrix)
+                        
+                    if bone.anim_rot is not None:
+                        bone.anim_rot.transform_rot(global_matrix)
+                    
+                    bone.billboarded = billboarded
+                    bone.billboard_lock = billboard_lock
+                    model.objects['bone'].add(bone)
+                    psys.parent = bone.name
                 
                 if psys.emitter.emitter_type == 'ParticleEmitter':
                     model.objects['particle'].add(psys)
