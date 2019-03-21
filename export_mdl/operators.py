@@ -1,4 +1,5 @@
 import bpy
+import os 
 
 from bpy.props import (
         FloatProperty,
@@ -99,6 +100,95 @@ class War3ExportMDL(Operator, ExportHelper, IOMDLOrientationHelper):
             layout.prop(self, 'optimize_tolerance')
   
 war3_event_types = War3EventTypesContainer() 
+
+def event_items(self, context):
+    return war3_event_types.enums[context.window_manager.events.event_type]
+
+class War3SearchEventTypes(Operator):
+    bl_idname = "object.search_eventtype"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "types"
+    
+    types = EnumProperty(
+                name = "Event Type",
+                items = [('SND', "Sound", ""),
+                         ('FTP', "Footprint", ""),
+                         ('SPN', "Spawned Object", ""),
+                         ('SPL', "Splat", ""),
+                         ('UBR', "UberSplat", "")],
+                default = 'SND',
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        context.window_manager.events.event_type = self.types;
+        return {'FINISHED'}
+        
+class War3SearchEventId(Operator):
+    bl_idname = "object.search_eventid"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "ids"
+    
+    ids = EnumProperty(
+                name = "Event ID",
+                items = event_items,
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        context.window_manager.events.event_id = self.ids;
+        return {'FINISHED'}
+     
+def load_texture_list():
+    directory = os.path.dirname(__file__)
+        
+    path = os.path.join(directory, "textures.txt")
+    l = []
+    with open(path, 'r') as f:
+        l = [(line[:-1], os.path.basename(line[:-1]), os.path.basename(line[:-1])) for line in f.readlines()]
+        
+    return l
+    
+texture_paths = load_texture_list()
+     
+class War3SearchTextures(Operator):
+    bl_idname = "object.search_textures"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "path"
+    
+    path = EnumProperty(
+                name = "Path",
+                items = texture_paths
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        try:
+            mat = context.active_object.active_material
+            i = mat.mdl_layer_index
+            item = mat.mdl_layers[i]
+            
+            item.path = self.path
+        except IndexError:
+            pass
+            
+        return {'FINISHED'}
+        
   
 class War3CreateEventObject(Operator):
     bl_idname = "object.create_eventobject"
@@ -162,11 +252,11 @@ class War3MaterialListActions(Operator):
     bl_idname = "custom.list_action"
     bl_label = "List Actions"
     bl_description = "Move items up and down, add and remove"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'INTERNAL'}
     
     name_counter = 0
 
-    action = bpy.props.EnumProperty(
+    action = EnumProperty(
         items=(
             ('UP', "Up", ""),
             ('DOWN', "Down", ""),

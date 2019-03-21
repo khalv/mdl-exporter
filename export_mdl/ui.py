@@ -126,9 +126,17 @@ class War3EventObjectPanel(Panel):
         
         events = context.window_manager.events
         
-        layout.prop(events, "event_type")
+        row = layout.row()
+        row.label("Event Type")
+        op = row.operator("object.search_eventtype", text="", icon='VIEWZOOM')
+        row.prop(events, "event_type", text="")
+        
         layout.separator()
-        layout.prop(events, "event_id")
+        
+        row = layout.row()
+        row.label("Event ID")
+        op = row.operator("object.search_eventid", text="", icon='VIEWZOOM')
+        row.prop(events, "event_id", text="")
 
 class War3BillboardPanel(Panel):  
     """Displays billboard settings in the Object panel"""
@@ -216,7 +224,11 @@ class War3MaterialPanel(Panel):
                 col.separator()
                 col.prop(active_layer, "texture_type")
                 if active_layer.texture_type == '0': # Image texture
-                    col.prop(active_layer, "path")
+                    row = col.row()
+                    row.label("Texture Path")
+                    op = row.operator("object.search_textures", text="", icon='VIEWZOOM')
+                    row.prop(active_layer, "path", text="")
+                    
                 elif active_layer.texture_type == '36':
                     col.prop(active_layer, "replaceable_id")
                 col.separator()
