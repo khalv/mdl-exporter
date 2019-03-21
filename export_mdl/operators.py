@@ -1,5 +1,7 @@
 import bpy
 import os 
+from bl_operators.presets import AddPresetBase
+from bpy.types import Menu
 
 from bpy.props import (
         FloatProperty,
@@ -167,6 +169,12 @@ class War3SearchTextures(Operator):
     bl_options = {'REGISTER', 'INTERNAL'}
     bl_property = "path"
     
+    target = EnumProperty(
+                name = "Target Type",
+                items = [('Emitter', 'Emitter', ''),
+                         ('Material', 'Material', '')]
+            )
+    
     path = EnumProperty(
                 name = "Path",
                 items = texture_paths
@@ -179,11 +187,15 @@ class War3SearchTextures(Operator):
         
     def execute(self, context):
         try:
-            mat = context.active_object.active_material
-            i = mat.mdl_layer_index
-            item = mat.mdl_layers[i]
-            
-            item.path = self.path
+            if self.target == 'Material':
+                mat = context.active_object.active_material
+                i = mat.mdl_layer_index
+                item = mat.mdl_layers[i]
+                item.path = self.path
+            else:
+                psys = context.active_object.particle_systems.active.settings.mdl_particle_sys
+                psys.texture_path = self.path
+                
         except IndexError:
             pass
             
@@ -299,3 +311,74 @@ class War3MaterialListActions(Operator):
                 self.report({'INFO'}, "Nothing selected in the Viewport")
                 
         return {"FINISHED"}
+   
+class PARTICLE_MT_emitter_presets(Menu):
+    bl_label = "Emitter Presets"
+    preset_subdir = "mdl_exporter/emitters"
+    preset_operator = "script.execute_preset"
+    draw = Menu.draw_preset
+   
+class AddPresetParticleSystem(AddPresetBase, Operator):
+    '''Add an Emitter Preset'''
+    bl_idname = "particle.emitter_preset_add"
+    bl_label = "Add Emitter Preset"
+    preset_menu = "PARTICLE_MT_emitter_presets"
+
+    # variable used for all preset values
+    preset_defines = [
+        "psys = bpy.context.object.particle_systems.active.settings.mdl_particle_sys"
+        ]
+
+    # properties to store in the preset
+    preset_values = [
+        "psys.emitter_type",
+        "psys.model_path",
+        "psys.texture_path",
+        "psys.filter_mode",
+        "psys.emission_rate",
+        "psys.life_span",
+        "psys.speed",
+        "psys.gravity",
+        "psys.longitude",
+        "psys.latitude",
+        "psys.ribbon_material",
+        "psys.ribbon_color",
+        "psys.variation",
+        "psys.head",
+        "psys.tail",
+        "psys.tail_length",
+        "psys.start_color",
+        "psys.start_alpha",
+        "psys.start_scale",
+        "psys.mid_color",
+        "psys.mid_alpha",
+        "psys.mid_scale",
+        "psys.end_color",
+        "psys.end_alpha",
+        "psys.end_scale",
+        "psys.time",
+        "psys.rows",
+        "psys.cols",
+        "psys.head_life_start",
+        "psys.head_life_end",
+        "psys.head_life_repeat",
+        "psys.head_decay_start",
+        "psys.head_decay_end",
+        "psys.head_decay_repeat",
+        "psys.tail_life_start",
+        "psys.tail_life_end",
+        "psys.tail_life_repeat",
+        "psys.tail_decay_start",
+        "psys.tail_decay_end",
+        "psys.tail_decay_repeat",
+        "psys.unshaded",
+        "psys.unfogged",
+        "psys.line_emitter",
+        "psys.sort_far_z",
+        "psys.model_space",
+        "psys.xy_quad",
+        ]
+
+    # where to store the preset
+    preset_subdir = "mdl_exporter/emitters"
+        
