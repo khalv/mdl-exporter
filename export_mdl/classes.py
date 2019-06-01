@@ -527,9 +527,10 @@ class War3Model:
         for psys in list(self.objects['particle']) + list(self.objects['particle2']) + list(self.objects['ribbon']):
             if psys.emitter.texture_path not in self.textures:
                 self.textures.append(psys.emitter.texture_path)
-                
+             
         self.tvertex_anims = list(set((layer.texture_anim for layer in layers if layer.texture_anim is not None)))
-
+        print('TVertex Anim Count: %d' % len(self.tvertex_anims))
+        
         vertices_all = []
         
         self.objects_all = []
@@ -989,17 +990,20 @@ class War3TextureAnim:
             return True
             
         return NotImplemented
-        
+       
+    def __ne__(self, other):
+        return not self.__eq__(other)
+       
     def __hash__(self):
-        return hash(tuple(hash(self.translation), hash(self.rotation), hash(self.scale)))
+        return hash((hash(self.translation), hash(self.rotation), hash(self.scale)))
       
     @staticmethod
     def get(anim_data, uv_node, sequences):
         anim = War3TextureAnim()
         if anim_data.action:
-            anim.translation = War3AnimationCurve.get(anim_data, 'translation', 3, sequences)
-            anim.rotation = War3AnimationCurve.get(anim_data, 'rotation', 3, sequences)
-            anim.scale = War3AnimationCurve.get(anim_data, 'scale', 3, sequences)
+            anim.translation = War3AnimationCurve.get(anim_data, 'nodes["%s"].translation' % uv_node.name, 3, sequences)
+            anim.rotation = War3AnimationCurve.get(anim_data, 'nodes["%s"].rotation' % uv_node.name, 3, sequences)
+            anim.scale = War3AnimationCurve.get(anim_data, 'nodes["%s"].scale' % uv_node.name, 3, sequences)
                     
         return anim if any((anim.translation, anim.rotation, anim.scale)) else None
         
@@ -1122,6 +1126,7 @@ class War3Material:
                 if uv_node is not None and mat.node_tree.animation_data is not None:
                     layer.texture_anim = War3TextureAnim.get(mat.node_tree.animation_data, uv_node, model.sequences)
                     if layer.texture_anim is not None:
+                        print('Texture anim found!')
                         model.register_global_sequence(layer.texture_anim.translation)
                         model.register_global_sequence(layer.texture_anim.rotation)
                         model.register_global_sequence(layer.texture_anim.scale)
