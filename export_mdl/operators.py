@@ -1,4 +1,7 @@
 import bpy
+import os 
+from bl_operators.presets import AddPresetBase
+from bpy.types import Menu
 
 from bpy.props import (
         FloatProperty,
@@ -96,6 +99,105 @@ class War3ExportMDL(Operator, ExportHelper, IOMDLOrientationHelper):
             layout.prop(self, 'optimize_tolerance')
   
 war3_event_types = War3EventTypesContainer() 
+
+def event_items(self, context):
+    return war3_event_types.enums[context.window_manager.events.event_type]
+
+class War3SearchEventTypes(Operator):
+    bl_idname = "object.search_eventtype"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "types"
+    
+    types = EnumProperty(
+                name = "Event Type",
+                items = [('SND', "Sound", ""),
+                         ('FTP', "Footprint", ""),
+                         ('SPN', "Spawned Object", ""),
+                         ('SPL', "Splat", ""),
+                         ('UBR', "UberSplat", "")],
+                default = 'SND',
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        context.window_manager.events.event_type = self.types;
+        return {'FINISHED'}
+        
+class War3SearchEventId(Operator):
+    bl_idname = "object.search_eventid"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "ids"
+    
+    ids = EnumProperty(
+                name = "Event ID",
+                items = event_items,
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        context.window_manager.events.event_id = self.ids;
+        return {'FINISHED'}
+     
+def load_texture_list():
+    directory = os.path.dirname(__file__)
+        
+    path = os.path.join(directory, "textures.txt")
+    l = []
+    with open(path, 'r') as f:
+        l = [(line[:-1], os.path.basename(line[:-1]), os.path.basename(line[:-1])) for line in f.readlines()]
+        
+    return l
+    
+texture_paths = load_texture_list()
+     
+class War3SearchTextures(Operator):
+    bl_idname = "object.search_textures"
+    bl_label = "Search"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    bl_property = "path"
+    
+    target = EnumProperty(
+                name = "Target Type",
+                items = [('Emitter', 'Emitter', ''),
+                         ('Material', 'Material', '')]
+            )
+    
+    path = EnumProperty(
+                name = "Path",
+                items = texture_paths
+            )
+    
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.invoke_search_popup(self)
+        return {'FINISHED'}
+        
+    def execute(self, context):
+        try:
+            if self.target == 'Material':
+                mat = context.active_object.active_material
+                i = mat.mdl_layer_index
+                item = mat.mdl_layers[i]
+                item.path = self.path
+            else:
+                psys = context.active_object.particle_systems.active.settings.mdl_particle_sys
+                psys.texture_path = self.path
+                
+        except IndexError:
+            pass
+            
+        return {'FINISHED'}
+        
   
 class War3CreateEventObject(Operator):
     bl_idname = "object.create_eventobject"
@@ -159,11 +261,11 @@ class War3MaterialListActions(Operator):
     bl_idname = "custom.list_action"
     bl_label = "List Actions"
     bl_description = "Move items up and down, add and remove"
-    bl_options = {'REGISTER'}
+    bl_options = {'REGISTER', 'INTERNAL'}
     
     name_counter = 0
 
-    action = bpy.props.EnumProperty(
+    action = EnumProperty(
         items=(
             ('UP', "Up", ""),
             ('DOWN', "Down", ""),
@@ -206,3 +308,74 @@ class War3MaterialListActions(Operator):
                 self.report({'INFO'}, "Nothing selected in the Viewport")
                 
         return {"FINISHED"}
+   
+class PARTICLE_MT_emitter_presets(Menu):
+    bl_label = "Emitter Presets"
+    preset_subdir = "mdl_exporter/emitters"
+    preset_operator = "script.execute_preset"
+    draw = Menu.draw_preset
+   
+class AddPresetParticleSystem(AddPresetBase, Operator):
+    '''Add an Emitter Preset'''
+    bl_idname = "particle.emitter_preset_add"
+    bl_label = "Add Emitter Preset"
+    preset_menu = "PARTICLE_MT_emitter_presets"
+
+    # variable used for all preset values
+    preset_defines = [
+        "psys = bpy.context.object.particle_systems.active.settings.mdl_particle_sys"
+        ]
+
+    # properties to store in the preset
+    preset_values = [
+        "psys.emitter_type",
+        "psys.model_path",
+        "psys.texture_path",
+        "psys.filter_mode",
+        "psys.emission_rate",
+        "psys.life_span",
+        "psys.speed",
+        "psys.gravity",
+        "psys.longitude",
+        "psys.latitude",
+        "psys.ribbon_material",
+        "psys.ribbon_color",
+        "psys.variation",
+        "psys.head",
+        "psys.tail",
+        "psys.tail_length",
+        "psys.start_color",
+        "psys.start_alpha",
+        "psys.start_scale",
+        "psys.mid_color",
+        "psys.mid_alpha",
+        "psys.mid_scale",
+        "psys.end_color",
+        "psys.end_alpha",
+        "psys.end_scale",
+        "psys.time",
+        "psys.rows",
+        "psys.cols",
+        "psys.head_life_start",
+        "psys.head_life_end",
+        "psys.head_life_repeat",
+        "psys.head_decay_start",
+        "psys.head_decay_end",
+        "psys.head_decay_repeat",
+        "psys.tail_life_start",
+        "psys.tail_life_end",
+        "psys.tail_life_repeat",
+        "psys.tail_decay_start",
+        "psys.tail_decay_end",
+        "psys.tail_decay_repeat",
+        "psys.unshaded",
+        "psys.unfogged",
+        "psys.line_emitter",
+        "psys.sort_far_z",
+        "psys.model_space",
+        "psys.xy_quad",
+        ]
+
+    # where to store the preset
+    preset_subdir = "mdl_exporter/emitters"
+        

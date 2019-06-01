@@ -7,7 +7,7 @@ from bpy.props import (
         
 from bpy.types import (
         Panel, 
-        UIList
+        UIList,
         )
         
 from .operators import War3MaterialListActions
@@ -126,9 +126,17 @@ class War3EventObjectPanel(Panel):
         
         events = context.window_manager.events
         
-        layout.prop(events, "event_type")
+        row = layout.row()
+        row.label("Event Type")
+        op = row.operator("object.search_eventtype", text="", icon='VIEWZOOM')
+        row.prop(events, "event_type", text="")
+        
         layout.separator()
-        layout.prop(events, "event_id")
+        
+        row = layout.row()
+        row.label("Event ID")
+        op = row.operator("object.search_eventid", text="", icon='VIEWZOOM')
+        row.prop(events, "event_id", text="")
 
 class War3BillboardPanel(Panel):  
     """Displays billboard settings in the Object panel"""
@@ -216,7 +224,11 @@ class War3MaterialPanel(Panel):
                 col.separator()
                 col.prop(active_layer, "texture_type")
                 if active_layer.texture_type == '0': # Image texture
-                    col.prop(active_layer, "path")
+                    row = col.row()
+                    row.label("Texture Path")
+                    row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Material'
+                    row.prop(active_layer, "path", text="")
+                    
                 elif active_layer.texture_type == '36':
                     col.prop(active_layer, "replaceable_id")
                 col.separator()
@@ -228,6 +240,8 @@ class War3MaterialPanel(Panel):
                 col.prop(active_layer, "two_sided")
                 col.prop(active_layer, "no_depth_test")
                 col.prop(active_layer, "no_depth_set")
+
+
                 
 class War3ParticleEditorPanel(Panel):
     """Creates a particle editor Panel in the Particles window"""
@@ -246,6 +260,11 @@ class War3ParticleEditorPanel(Panel):
         
         psys = context.active_object.particle_systems.active.settings.mdl_particle_sys
         
+        row = layout.row(align=True) 
+        row.menu('PARTICLE_MT_emitter_presets', text='Presets')
+        row.operator('particle.emitter_preset_add', text='', icon='ZOOMIN')
+        row.operator('particle.emitter_preset_add', text='', icon='ZOOMOUT').remove_active = True
+        
         layout.prop(psys, "emitter_type")
         
         if psys.emitter_type == 'ParticleEmitter':
@@ -263,7 +282,13 @@ class War3ParticleEditorPanel(Panel):
             
         elif psys.emitter_type == 'RibbonEmitter':
             layout.prop_search(psys, "ribbon_material", bpy.data, "materials")
-            layout.prop(psys, "texture_path")
+            # layout.prop(psys, "texture_path")
+            
+            row = layout.row()
+            row.label("Texture Path")
+            row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Emitter'
+            row.prop(psys, "texture_path", text="")
+            
             layout.separator()
             
             layout.prop(psys, "ribbon_color")
@@ -283,7 +308,11 @@ class War3ParticleEditorPanel(Panel):
             col.label("Columns")
             col.prop(psys, "cols")
         else:
-            layout.prop(psys, "texture_path")
+            row = layout.row()
+            row.label("Texture Path")
+            row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Emitter'
+            row.prop(psys, "texture_path", text="")
+            
             layout.prop(psys, "filter_mode")
             
             layout.separator()
