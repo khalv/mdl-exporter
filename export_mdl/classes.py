@@ -1,7 +1,10 @@
 import bpy
+import bmesh
 import math
+import itertools
 
 from collections import defaultdict
+from operator import itemgetter
 
 from mathutils import (
     Quaternion, 
@@ -11,6 +14,13 @@ from mathutils import (
     )
     
 from .utils import *
+
+class War3ExportSettings:
+    def __init__(self):
+        self.global_matrix = Matrix()
+        self.use_selection = False
+        self.optimize_animation = False
+        self.optimize_tolerance = 0.05
     
 class War3Model:
 
@@ -19,17 +29,21 @@ class War3Model:
 
     def __init__(self, context):
         self.objects = defaultdict(set)
-        self.geosets = {}
-        self.materials = set()
+        self.objects_all = []
+        self.object_indices = {}
+        self.geosets = []
+        self.geoset_map = {}
+        self.geoset_anims = []
+        self.geoset_anim_map = {}
+        self.materials = []
         self.sequences = []
         self.global_extents_min = 0
         self.global_extents_max = 0
-        self.geoset_anims = []
-        self.geoset_anim_map = {}
         self.const_color_mats = set()
         self.global_seqs = set()
-        self.global_matrix = Matrix()
         self.cameras = []
+        self.textures = []
+        self.tvertex_anims = []
         
         self.f2ms = 1000 / context.scene.render.fps # Frame to milisecond conversion
         self.name = bpy.path.basename(context.blend_data.filepath).replace(".blend","")
@@ -63,23 +77,501 @@ class War3Model:
         mesh.calc_tessface()
 
         return mesh
+       
+    @staticmethod
+    def get_parent(obj):
+        parent = obj.parent
+       
+        if parent is None:
+            return None # Instead return object name??
+            
+        if obj.parent_type == 'BONE': #TODO: Check if animated - otherwise, make it a helper
+            return obj.parent_bone if obj.parent_bone != "" else None
+            
+        if parent.type == 'EMPTY' and parent.name.startswith("Bone_"):
+            return parent.name
+            
+        anim_loc = get_curves(parent, 'location', (1, 2, 3))
+        anim_rot = get_curves(parent, 'rotation_quaternion', (1, 2, 3, 4))
+        anim_scale = get_curves(parent, 'scale', (1, 2, 3))
+        animations = (anim_loc, anim_rot, anim_scale)
         
-    def from_scene(self, context, use_selection):
+        if not any(animations):
+            root_parent = War3Model.get_parent(parent)
+            if root_parent is not None:
+                return root_parent
+                
+        return parent.name
+        
+    def get_visibility(self, obj):
+        if obj.animation_data is not None:
+            curve = War3AnimationCurve.get(obj.animation_data, 'hide_render', 1, self.sequences)
+            if curve is not None:
+                return curve
+        if obj.parent is not None and obj.parent_type != 'BONE':
+                return self.get_visibility(obj.parent)
+        return None
+        
+    def from_scene(self, context, settings):
         
         scene = context.scene
         
         self.sequences = self.get_sequences(scene)
         
         objs = []
-        if use_selection:
+        mats = set()
+        
+        if settings.use_selection:
             objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
         else:
             objs = (obj for obj in scene.objects if obj.is_visible(scene))
             
+        for obj in objs:
+            parent = War3Model.get_parent(obj)
             
+            billboarded = False
+            billboard_lock = (False, False, False)
+            if hasattr(obj, "mdl_billboard"):
+                bb = obj.mdl_billboard
+                billboarded = bb.billboarded
+                billboard_lock = (bb.billboard_lock_z, bb.billboard_lock_y, bb.billboard_lock_x) # NOTE: Axes are listed backwards (same as with colors)
+                
+            # Animations
+            visibility = self.get_visibility(obj)
+                
+            anim_loc = War3AnimationCurve.get(obj.animation_data, 'location', 3, self.sequences) # get_curves(obj, 'location', (0, 1, 2))
+            if anim_loc is not None and settings.optimize_animation:
+                anim_loc.optimize(settings.optimize_tolerance, self.sequences)
+                
+            anim_rot = War3AnimationCurve.get(obj.animation_data, 'rotation_quaternion', 4, self.sequences) # get_curves(obj, 'rotation_quaternion', (0, 1, 2, 3))
+            
+            if anim_rot is None:
+                anim_rot = War3AnimationCurve.get(obj.animation_data, 'rotation_euler', 3, self.sequences)
+                
+            if anim_rot is not None and settings.optimize_animation:
+                anim_rot.optimize(settings.optimize_tolerance, self.sequences)
+                
+            anim_scale = War3AnimationCurve.get(obj.animation_data, 'scale', 3, self.sequences) # get_curves(obj, 'scale', (0, 1, 2))
+            if anim_scale is not None and settings.optimize_animation:
+                anim_scale.optimize(settings.optimize_tolerance, self.sequences)
+                
+            is_animated = any((anim_loc, anim_rot, anim_scale))
+            
+            # Particle Systems
+            if len(obj.particle_systems):
+                data = obj.particle_systems[0].settings
+                
+                if getattr(data, "mdl_particle_sys"):
+                    psys = War3ParticleSystem(obj.name, obj, self)
+                    
+                    psys.pivot = settings.global_matrix * Vector(obj.location)
+                    
+                    # psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.scale)
+                    psys.dimensions = Vector(map(abs, settings.global_matrix * obj.dimensions))
+                    
+                    psys.parent = parent
+                    psys.visibility = visibility
+                    self.register_global_sequence(psys.visibility)
+                    
+                    if is_animated:
+                        bone = War3Object(obj.name)
+                        bone.parent = parent
+                        bone.pivot = settings.global_matrix * Vector(obj.location)
+                        bone.anim_loc = anim_loc
+                        bone.anim_rot = anim_rot
+                        bone.anim_scale = anim_scale
+                        self.register_global_sequence(bone.anim_loc)
+                        self.register_global_sequence(bone.anim_rot)
+                        self.register_global_sequence(bone.anim_scale)
+                        
+                        if bone.anim_loc is not None:
+                            bone.anim_loc.transform_vec(settings.global_matrix)
+                            
+                        if bone.anim_rot is not None:
+                            bone.anim_rot.transform_rot(settings.global_matrix)
+                        
+                        bone.billboarded = billboarded
+                        bone.billboard_lock = billboard_lock
+                        self.objects['bone'].add(bone)
+                        psys.parent = bone.name
+                    
+                    if psys.emitter.emitter_type == 'ParticleEmitter':
+                        self.objects['particle'].add(psys)
+                    elif psys.emitter.emitter_type == 'ParticleEmitter2':
+                        self.objects['particle2'].add(psys)
+                    else:
+                        # Add the material to the list, in case it's unused
+                        mat = psys.emitter.ribbon_material
+                        mats.add(mat)
+                        
+                        self.objects['ribbon'].add(psys)
+                        
+            # Collision Shapes
+            elif obj.type == 'EMPTY' and obj.name.startswith('Collision'):
+                collider = War3Object(obj.name)
+                collider.parent = parent
+                collider.pivot = settings.global_matrix * Vector(obj.location)
+                
+                if 'Box' in obj.name:
+                    collider.type = 'Box'
+                    corners = []
+                    for corner in ((0.5, 0.5, -0.5), (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (0.5, 0.5, 0.5), (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (-0.5, 0.5, 0.5)):
+                        mat = settings.global_matrix * obj.matrix_world
+                        corners.append(mat.to_quaternion() * Vector(abs(x * obj.empty_draw_size * settings.global_matrix.median_scale) * y for x, y in zip(obj.scale, corner)))
+
+                    vmin, vmax = calc_extents(corners)
+                    
+                    collider.verts = [vmin, vmax] # TODO: World space or relative to pivot??
+                    self.objects['collisionshape'].add(collider)
+                elif 'Sphere' in obj.name:
+                    collider.type = 'Sphere'
+                    collider.verts = [settings.global_matrix * Vector(obj.location)]
+                    collider.radius = settings.global_matrix.median_scale * max(abs(x * obj.empty_draw_size) for x in obj.scale)
+                    self.objects['collisionshape'].add(collider)
+                    
+            elif obj.type == 'MESH' or obj.type == 'CURVE':
+                mesh = self.prepare_mesh(obj, context, settings.global_matrix * obj.matrix_world)
+                
+                # Geoset Animation
+                vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)# get_curves(obj, 'color', (0, 1, 2))
+                vertexcolor = obj.color if any(i != 1 for i in obj.color) else None
+                geoset_anim = None
+                geoset_anim_hash = 0
+                if any((vertexcolor, vertexcolor_anim, visibility)):
+                    geoset_anim = War3GeosetAnim(vertexcolor, vertexcolor_anim, visibility)
+                    geoset_anim_hash = hash(geoset_anim) # The hash is a bit complex, so we precompute it
+                mesh_geosets = set()
+                
+                armature = None
+                for m in obj.modifiers:
+                    if m.type == 'ARMATURE':
+                        armature = m
+                        
+                bone_names = set()
+                if armature is not None:
+                    bone_names = set(b.name for b in armature.object.data.bones)
+                    
+                bone = None
+                if (armature is None and parent is None) or is_animated:
+                    bone = War3Object(obj.name) # Object is animated or parent is missing - create a bone for it!
+                    
+                    bone.parent = parent # Remember to make it the parent - parent is added to matrices further down
+                    bone.pivot = settings.global_matrix * Vector(obj.location)
+                    bone.anim_loc = anim_loc
+                    bone.anim_rot = anim_rot
+                    bone.anim_scale = anim_scale
+                    self.register_global_sequence(bone.anim_loc)
+                    self.register_global_sequence(bone.anim_rot)
+                    self.register_global_sequence(bone.anim_scale)
+                    bone.matrix = settings.global_matrix * obj.matrix_world.inverted()
+                    bone.billboarded = billboarded
+                    bone.billboard_lock = billboard_lock
+                    if geoset_anim is not None:
+                        self.geoset_anim_map[bone] = geoset_anim
+                    self.objects['bone'].add(bone)
+                    parent = bone.name
+                    
+                    
+                for f in mesh.tessfaces:
+                    p = mesh.polygons[f.index]
+                    # Textures and materials
+                    mat_name = "default"
+                    if obj.material_slots and len(obj.material_slots):
+                        mat = obj.material_slots[p.material_index].material
+                        if mat is not None:
+                            mat_name = mat.name
+                            mats.add(mat)
+                                
+                    geoset = None
+                    if (mat_name, geoset_anim_hash) in self.geoset_map.keys():
+                        geoset = self.geoset_map[(mat_name, geoset_anim_hash)]
+                    else:
+                        geoset = War3Geoset()
+                        geoset.mat_name = mat_name
+                        if geoset_anim is not None:
+                            geoset.geoset_anim = geoset_anim
+                            geoset_anim.geoset = geoset
+                        self.geoset_map[(mat_name, geoset_anim_hash)] = geoset
+                        
+                    # Vertices, faces, and matrices  
+                    vertexmap = {}
+                    for vert, loop in zip(p.vertices, p.loop_indices):
+                        co = mesh.vertices[vert].co
+                        coord = (rnd(co.x), rnd(co.y), rnd(co.z))
+                        n = mesh.vertices[vert].normal if f.use_smooth else f.normal
+                        norm = (rnd(n.x), rnd(n.y), rnd(n.z))
+                        uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
+                        uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
+                        tvert = (rnd(uv.x), rnd(uv.y))
+                        groups = None
+                        matrix = 0
+                        
+                        if armature is not None:
+                            vgroups = sorted(mesh.vertices[vert].groups[:], key=lambda x:x.weight, reverse=True) # Sort bones by descending weight
+                            if len(vgroups):
+                                groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if (obj.vertex_groups[vg.group].name in bone_names and vg.weight > 0.25))[:3]
+                                if not len(groups):
+                                    groups = [parent]
+                        elif parent is not None:
+                            groups = [parent]
+                                    
+                        if groups is not None:
+                            if groups not in geoset.matrices:
+                                geoset.matrices.append(groups)
+                            matrix = geoset.matrices.index(groups)
+
+                        
+                        vertex = (coord, norm, tvert, matrix)
+                        if vertex not in geoset.vertices:
+                            geoset.vertices.append(vertex)
+                            
+                        vertexmap[vert] = geoset.vertices.index(vertex)
+                            
+                    # Triangles, normals, vertices, and UVs
+                    geoset.triangles.append((vertexmap[p.vertices[0]], vertexmap[p.vertices[1]], vertexmap[p.vertices[2]]))
+                    
+                    mesh_geosets.add(geoset)
+                    
+                for geoset in mesh_geosets:
+                    geoset.objects.append(obj)
+                    if not len(geoset.matrices) and parent is not None:
+                        geoset.matrices.append([parent])
+                            
+                bpy.data.meshes.remove(mesh)
+                
+                
+            elif obj.type == 'EMPTY':
+                if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
+                    eventobj = War3Object(obj.name)
+                    eventobj.pivot = settings.global_matrix * Vector(obj.location)
+                    
+                    for datapath in ('["event_track"]', '["eventtrack"]', '["EventTrack"]'):
+                        eventobj.track = War3AnimationCurve.get(obj.animation_data, datapath, 1, self.sequences) # get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
+                        if eventobj.track is not None:
+                            self.register_global_sequence(eventobj.track)
+                            break;
+                            
+                    self.objects['eventobject'].add(eventobj)
+                elif obj.name.endswith(" Ref"):
+                    att = War3Object(obj.name)
+                    att.pivot = settings.global_matrix * Vector(obj.location)
+                    att.parent = parent
+                    att.visibility = visibility
+                    self.register_global_sequence(visibility)
+                    att.billboarded = billboarded
+                    att.billboard_lock = billboard_lock
+                    self.objects['attachment'].add(att)
+                elif obj.name.startswith("Bone_"):
+                    bone = War3Object(obj.name)
+                    if parent is not None:
+                        bone.parent = parent
+                    bone.pivot = settings.global_matrix * Vector(obj.location)
+                    bone.anim_loc = anim_loc
+                    bone.anim_scale = anim_scale
+                    bone.anim_rot = anim_rot
+                    
+                    self.register_global_sequence(bone.anim_scale)
+                    
+                    if bone.anim_loc is not None:
+                        self.register_global_sequence(bone.anim_loc)
+                        bone.anim_loc.transform_vec(obj.matrix_world.inverted())
+                        bone.anim_loc.transform_vec(settings.global_matrix)
+                        
+                    if bone.anim_rot is not None:
+                        self.register_global_sequence(bone.anim_rot)
+                        bone.anim_rot.transform_rot(obj.matrix_world.inverted())
+                        bone.anim_rot.transform_rot(settings.global_matrix)
+                        
+                    bone.billboarded = billboarded
+                    bone.billboard_lock = billboard_lock
+                    self.objects['bone'].add(bone)
+            elif obj.type == 'ARMATURE':
+                root = War3Object(obj.name)
+                if parent is not None:
+                    root.parent = parent
+                    
+                root.pivot = settings.global_matrix * Vector(obj.location)
+                
+                root.anim_loc = anim_loc
+                root.anim_scale = anim_scale
+                root.anim_rot = anim_rot
+                
+                self.register_global_sequence(root.anim_scale)
+                
+                if root.anim_loc is not None:
+                    self.register_global_sequence(root.anim_loc)
+                    root.anim_loc.transform_vec(obj.matrix_world.inverted())
+                    root.anim_loc.transform_vec(settings.global_matrix)
+                    
+                if root.anim_rot is not None:
+                    self.register_global_sequence(root.anim_rot)
+                    root.anim_rot.transform_rot(obj.matrix_world.inverted())
+                    root.anim_rot.transform_rot(settings.global_matrix)
+                
+                root.visibility = visibility
+                self.register_global_sequence(visibility)
+                root.billboarded = billboarded
+                root.billboard_lock = billboard_lock
+                self.objects['bone'].add(root) 
+                
+                for b in obj.pose.bones:
+                    bone = War3Object(b.name)
+                    if b.parent is not None:
+                        bone.parent = b.parent.name
+                    else:
+                        bone.parent = root.name
+                        
+                    bone.pivot = obj.matrix_world * Vector(b.bone.head_local) # Armature space to world space
+                    bone.pivot = settings.global_matrix * Vector(bone.pivot) # Axis conversion
+                    datapath = 'pose.bones[\"'+b.name+'\"].%s'
+                    bone.anim_loc = War3AnimationCurve.get(obj.animation_data, datapath % 'location', 3, self.sequences) # get_curves(obj, datapath % 'location', (0, 1, 2))
+                    # register_global_seq(bone.anim_loc, global_seqs, [('location', 0)])
+                    if settings.optimize_animation and bone.anim_loc is not None:
+                        bone.anim_loc.optimize(settings.optimize_tolerance, self.sequences)
+
+                    bone.anim_rot = War3AnimationCurve.get(obj.animation_data, datapath % 'rotation_quaternion', 4, self.sequences) # get_curves(obj, datapath % 'rotation_quaternion', (0, 1, 2, 3))
+                    if bone.anim_rot is None:
+                        bone.anim_rot = War3AnimationCurve.get(obj.animation_data, datapath % 'rotation_euler', 3, self.sequences)
+                    if settings.optimize_animation and bone.anim_rot is not None:
+                        bone.anim_rot.optimize(settings.optimize_tolerance, self.sequences)
+
+                    bone.anim_scale = War3AnimationCurve.get(obj.animation_data, datapath % 'scale', 3, self.sequences) # get_curves(obj, datapath % 'scale', (0, 1, 2))
+                    if settings.optimize_animation and bone.anim_scale is not None:
+                        bone.anim_scale.optimize(settings.optimize_tolerance, self.sequences)
+                    
+                    self.register_global_sequence(bone.anim_scale)
+                    
+                    if bone.anim_loc is not None:
+                        m = obj.matrix_world * b.bone.matrix_local
+                        bone.anim_loc.transform_vec(settings.global_matrix * m.to_3x3().to_4x4())
+                        self.register_global_sequence(bone.anim_loc)
+                        
+                    if bone.anim_rot is not None:
+                        mat_pose_ws = obj.matrix_world * b.bone.matrix_local
+                        mat_rest_ws = obj.matrix_world * b.matrix
+                        bone.anim_rot.transform_rot(mat_pose_ws)
+                        bone.anim_rot.transform_rot(settings.global_matrix)
+                        self.register_global_sequence(bone.anim_rot)
+                    
+                    self.objects['bone'].add(bone)
+                    
+            elif obj.type == 'LAMP':
+                light = War3Object(obj.name)
+                light.object = obj
+                light.pivot = settings.global_matrix * Vector(obj.location)
+                light.billboarded = billboarded
+                light.billboard_lock = billboard_lock
+                
+                if hasattr(obj.data, "mdl_light"):
+                    light_data = obj.data.mdl_light
+                    light.type = light_data.light_type
+                
+                    light.intensity = light_data.intensity
+                    light.intensity_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.intensity', 1, self.sequences) #get_curve(obj.data, ['mdl_light.intensity'])
+                    self.register_global_sequence(light.intensity_anim)
+                    # register_global_seq(light.intensity_anim, global_seqs)
+                    
+                    light.atten_start = light_data.atten_start
+                    light.atten_start_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.atten_start', 1, self.sequences) # get_curve(obj.data, ['mdl_light.atten_start'])
+                    self.register_global_sequence(light.atten_start_anim)
+                    # register_global_seq(light.atten_start_anim, global_seqs)
+                        
+                    light.atten_end = light_data.atten_end
+                    light.atten_end_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.atten_end', 1, self.sequences) # get_curve(obj.data, ['mdl_light.atten_end'])
+                    self.register_global_sequence(light.atten_end_anim)
+                    # register_global_seq(light.atten_end_anim, global_seqs)
+                    
+                    light.color = light_data.color
+                    light.color_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.color', 3, self.sequences) # get_curve(obj.data, ['mdl_light.color'])
+                    self.register_global_sequence(light.color_anim)
+                    # register_global_seq(light.color_anim, global_seqs, [0])
+                        
+                    light.amb_color = light_data.amb_color
+                    light.amb_color_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.amb_color', 3, self.sequences) # get_curve(obj.data, ['mdl_light.amb_color'])
+                    self.register_global_sequence(light.amb_color_anim)
+                    # register_global_seq(light.amb_color_anim, global_seqs, [0])
+                        
+                    light.amb_intensity = light_data.amb_intensity
+                    light.amb_intensity_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.amb_intensity', 1, self.sequences) # get_curve(obj.data, ['obj.mdl_light.amb_intensity'])
+                    self.register_global_sequence(light.amb_intensity_anim)
+                    # register_global_seq(light.amb_intensity_anim, global_seqs)
+                        
+                light.visibility = visibility
+                self.register_global_sequence(visibility)
+                self.objects['light'].add(light)
+                
+            elif obj.type == 'CAMERA':
+                self.cameras.append(obj)
+          
+            
+        self.geosets = list(self.geoset_map.values())
+        self.materials = [War3Material.get(mat, self) for mat in mats]
+        # Add default material if no other materials present
+        if any((x for x in self.geosets if x.mat_name == "default")):
+            default_mat = War3Material("default")
+            default_mat.layers.append(War3MaterialLayer())
+            self.materials.append(default_mat)
+            
+        self.materials = sorted(self.materials, key=lambda x: x.priority_plane)
+
+        layers = list(itertools.chain.from_iterable([material.layers for material in self.materials]))
+        self.textures = list(set((layer.texture for layer in layers))) # Convert to set and back to list for unique entries
         
+        # Demote bones to helpers if they have no attached geosets
+        for bone in self.objects['bone']:
+            if not any([g for g in self.geosets if bone.name in itertools.chain.from_iterable(g.matrices)]):
+                self.objects['helper'].add(bone)
+                
+        self.objects['bone'] -= self.objects['helper']
+        # We also need the textures used by emitters
+        for psys in list(self.objects['particle']) + list(self.objects['particle2']) + list(self.objects['ribbon']):
+            if psys.emitter.texture_path not in self.textures:
+                self.textures.append(psys.emitter.texture_path)
+                
+        self.tvertex_anims = list(set((layer.texture_anim for layer in layers if layer.texture_anim is not None)))
+
+        vertices_all = []
         
-       
+        self.objects_all = []
+        self.object_indices = {}
+        
+        index = 0
+        for tag in ('bone', 'light', 'helper', 'attachment', 'particle', 'particle2', 'ribbon', 'eventobject', 'collisionshape'):
+            for object in self.objects[tag]:
+                self.object_indices[object.name] = index
+                self.objects_all.append(object)
+                vertices_all.append(object.pivot)
+                if tag == 'collisionshape':
+                    for vert in object.verts:
+                        vertices_all.append(vert)
+                index = index+1
+                
+        for geoset in self.geosets:
+            for vertex in geoset.vertices:
+                vertices_all.append(vertex[0])
+                
+            geoset.min_extent, geoset.max_extent = calc_extents([x[0] for x in geoset.vertices])
+            if geoset.geoset_anim is not None:
+                self.register_global_sequence(geoset.geoset_anim.alpha_anim)
+                self.register_global_sequence(geoset.geoset_anim.color_anim)
+
+                for bone in itertools.chain.from_iterable(geoset.matrices):
+                    self.geoset_anim_map[bone] = geoset.geoset_anim
+         
+        # Account for particle systems when calculating bounds 
+        for psys in list(self.objects['particle']) + list(self.objects['particle2']) + list(self.objects['ribbon']):
+            vertices_all.append(tuple(x + y/2 for x, y in zip(psys.pivot, psys.dimensions)))
+            vertices_all.append(tuple(x - y/2 for x, y in zip(psys.pivot, psys.dimensions)))
+        
+        self.geoset_anims = list(set(g.geoset_anim for g in self.geosets if g.geoset_anim is not None))
+        
+        self.global_extents_min, self.global_extents_max = calc_extents(vertices_all) if len(vertices_all) else ((0, 0, 0), (0, 0, 0))
+        self.global_seqs = sorted(self.global_seqs) 
+           
+        
+    def to_scene(self, context):
+        pass
+        
     def get_sequences(self, scene):
         sequences = []
         
@@ -111,9 +603,6 @@ class War3Model:
         min_extents = tuple(min(vertices,key=itemgetter(i))[i] for i in range(3))
         
         return min_extents, max_extents
-       
-    def generate(self, context):
-        pass
         
         
 
@@ -272,8 +761,8 @@ class War3AnimationCurve:
         # We want start and end keyframes for each sequence. Make sure not to do this for events and global sequences, though!
         if self.global_sequence < 0 and self.type in {'Rotation', 'Translation', 'Scale'}:
             for sequence in sequences:
-                frames.add(sequence.start / f2ms)
-                frames.add(sequence.end / f2ms)
+                frames.add(round(sequence.start / f2ms))
+                frames.add(round(sequence.end / f2ms))
             
         if self.type == 'Boolean' or self.type == 'Event':
             self.interpolation == 'DontInterp'
@@ -359,15 +848,16 @@ class War3AnimationCurve:
         
         if self.interpolation == 'Bezier':
             self.interpolation = 'Linear' # This feature doesn't support bezier as of right now
+           
+        print('Before: %d' % len(self.keyframes))
         
         newKeys = []
         for sequence in sequences:
-            start = int(sequence.start / f2ms)
-            end = int(sequence.end / f2ms)
+            start = int(round(sequence.start / f2ms))
+            end = int(round(sequence.end / f2ms))
             newKeys += [(start, self.keyframes[start]), (end, self.keyframes[end])]
             newKeys += self.split_segment((start, self.keyframes[start]) , (end, self.keyframes[end]), tolerance)
         
-        print('Before: %d' % len(self.keyframes))
         self.keyframes.clear()
         self.keyframes.update(newKeys)
         print('After: %d' % len(self.keyframes))
@@ -603,7 +1093,7 @@ class War3Material:
         material = War3Material(mat.name)
         
         # Should we use vertex color?
-        for geoset in model.geosets.values():
+        for geoset in model.geosets:
             if geoset.geoset_anim is not None and geoset.mat_name == mat.name:
                 if any((geoset.geoset_anim.color, geoset.geoset_anim.color_anim)):
                     material.use_const_color = True

@@ -14,6 +14,7 @@ from bpy.props import (
 from bpy.types import Operator
 
 from .properties import War3EventTypesContainer
+from .classes import War3ExportSettings
 
 from bpy_extras.io_utils import (
         ImportHelper,
@@ -66,21 +67,17 @@ class War3ExportMDL(Operator, ExportHelper, IOMDLOrientationHelper):
         filepath = self.filepath
         filepath = bpy.path.ensure_ext(filepath, self.filename_ext)
         
-        global_matrix = axis_conversion(to_forward=self.axis_forward,
+        settings = War3ExportSettings()
+        settings.global_matrix = axis_conversion(to_forward=self.axis_forward,
                                  to_up=self.axis_up,
                                  ).to_4x4() * Matrix.Scale(self.global_scale, 4)
                                  
-        
-        keywords = self.as_keywords(ignore=("axis_forward",
-                                    "axis_up",
-                                    "global_scale",
-                                    "filter_glob",
-                                    ))
-        
-        keywords["global_matrix"] = global_matrix
+        settings.use_selection = self.use_selection
+        settings.optimize_animation = self.optimize_animation
+        settings.optimize_tolerance = self.optimize_tolerance
         
         from . import export_mdl
-        export_mdl.save(self, context, **keywords)
+        export_mdl.save(self, context, settings, filepath=filepath, mdl_version=800)
         
         return {'FINISHED'}
        
