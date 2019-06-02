@@ -8,6 +8,10 @@ By Kalle Halvarsson
 * MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
 * The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
 
+### 2.8 Support
+
+Support for Blender 2.8 is currently experimental - if you want to test it out, swap to the 2.8 branch and follow the instructions above. Note that there has been a lot of UI and hotkey changes for 2.8, so some details of this readme might not apply.
+
 ## Instructions
 This plugin tries to approximate the functionality of the Wc3 Art Tools exporter for 3ds Max. The ambition has been to support multiple ways of achieving the same result, so that users can set up their scene in whatever way feels most intuitive. There are, however, some implementation details you might need to know before using this plugin.
 
