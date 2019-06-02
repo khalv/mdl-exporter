@@ -10,9 +10,9 @@ from bpy.types import (
         UIList,
         )
         
-from .operators import War3MaterialListActions
+from .operators import WAR3_OT_material_list_action
 
-class War3SequenceList(UIList):
+class WAR3_UL_sequence_list(UIList):
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
@@ -21,9 +21,9 @@ class War3SequenceList(UIList):
             layout.alignment = 'CENTER'
             layout.label(text="", icon_value='TIME')
 
-class War3SequencePanel(Panel):
+class WAR3_PT_sequences_panel(Panel):
     """Creates a sequence editor Panel in the Scene window"""
-    bl_idname = "OBJECT_PT_sequences_panel"
+    bl_idname = "WAR3_PT_sequences_panel"
     bl_label = "MDL Sequences"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -40,7 +40,7 @@ class War3SequencePanel(Panel):
         scene = context.scene
         
         row = layout.row()
-        row.template_list("War3SequenceList", "", scene, "mdl_sequences", scene, "mdl_sequence_index", rows=2)
+        row.template_list("WAR3_UL_sequence_list", "", scene, "mdl_sequences", scene, "mdl_sequence_index", rows=2)
         
         sequences = getattr(scene, "mdl_sequences", None)
         index = getattr(scene, "mdl_sequence_index", None)
@@ -54,9 +54,9 @@ class War3SequencePanel(Panel):
             
             row = layout.row()
             col = row.column()
-            col.label("Start")
+            col.label(text="Start")
             col = row.column()
-            col.label("End")
+            col.label(text="End")
             
             row = layout.row()
             col = row.column()
@@ -76,10 +76,10 @@ class War3SequencePanel(Panel):
                 col.separator()
             col.prop(active_sequence, "non_looping")
                 
-class War3MaterialLayerList(UIList):
+class WAR3_UL_material_layer_list(UIList):
     
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-        icons = {'0' : 'IMAGE_DATA', '1' : 'TEXTURE', '2' : 'POTATO', '11' : 'FACESEL', '36' : 'IMAGE_RGB_ALPHA', 'Tree' : 'MESH_CONE'}
+        icons = {'0' : 'IMAGE_DATA', '1' : 'TEXTURE', '2' : 'SHADING_TEXTURE', '11' : 'FACESEL', '36' : 'IMAGE_RGB_ALPHA', 'Tree' : 'MESH_CONE'}
         icon = icons[item.texture_type] if item.texture_type in icons.keys() else icons['Tree']
         if self.layout_type in {'DEFAULT', 'COMPACT'}:
             layout.prop(item, "name", text="", emboss=False, icon=icon)
@@ -88,9 +88,9 @@ class War3MaterialLayerList(UIList):
             layout.label(text="", icon_value=icon)
             
         
-class War3EventObjectPanel(Panel):  
+class WAR3_PT_event_panel(Panel):  
     """Displays event object properties in the Object panel"""
-    bl_idname = "OBJECT_PT_event_panel"
+    bl_idname = "WAR3_PT_event_panel"
     bl_label = "Event Object"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -127,20 +127,20 @@ class War3EventObjectPanel(Panel):
         events = context.window_manager.events
         
         row = layout.row()
-        row.label("Event Type")
+        row.label(text="Event Type")
         op = row.operator("object.search_eventtype", text="", icon='VIEWZOOM')
         row.prop(events, "event_type", text="")
         
         layout.separator()
         
         row = layout.row()
-        row.label("Event ID")
+        row.label(text="Event ID")
         op = row.operator("object.search_eventid", text="", icon='VIEWZOOM')
         row.prop(events, "event_id", text="")
 
-class War3BillboardPanel(Panel):  
+class WAR3_PT_billboard_panel(Panel):  
     """Displays billboard settings in the Object panel"""
-    bl_idname = "OBJECT_PT_billboard_panel"
+    bl_idname = "WAR3_PT_billboard_panel"
     bl_label = "MDL Billboard Options"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -164,7 +164,7 @@ class War3BillboardPanel(Panel):
         if obj.type == 'EMPTY' and obj.name.lower().startswith("bone"):
             return True
             
-        if obj.type == 'LAMP':
+        if obj.type in ('LAMP', 'LIGHT'):
             return True
             
         if obj.name.endswith(" Ref"):
@@ -180,9 +180,9 @@ class War3BillboardPanel(Panel):
         layout.prop(data, "billboard_lock_y")
         layout.prop(data, "billboard_lock_z")
         
-class War3MaterialPanel(Panel):
+class WAR3_PT_material_panel(Panel):
     """Creates a material editor Panel in the Material window"""
-    bl_idname = "OBJECT_PT_material_panel"
+    bl_idname = "WAR3_PT_material_panel"
     bl_label = "MDL Material Settings"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -206,11 +206,11 @@ class War3MaterialPanel(Panel):
         if layers is not None and index is not None:
             row = layout.row()
             
-            row.template_list("War3MaterialLayerList", "", mat, "mdl_layers", mat, "mdl_layer_index", rows=2)
+            row.template_list("WAR3_UL_material_layer_list", "", mat, "mdl_layers", mat, "mdl_layer_index", rows=2)
             
             col = row.column(align=True)
-            col.operator("custom.list_action", icon='ZOOMIN', text="").action = 'ADD'
-            col.operator("custom.list_action", icon='ZOOMOUT', text="").action = 'REMOVE'
+            col.operator("custom.list_action", icon='ADD', text="").action = 'ADD'
+            col.operator("custom.list_action", icon='REMOVE', text="").action = 'REMOVE'
             col.separator()
             col.operator("custom.list_action", icon='TRIA_UP', text="").action = 'UP'
             col.operator("custom.list_action", icon='TRIA_DOWN', text="").action = 'DOWN'
@@ -219,14 +219,13 @@ class War3MaterialPanel(Panel):
             
             if len(layers):
                 active_layer = layers[index]
-                print(active_layer)
                 col.prop(active_layer, "name")
                 col.separator()
                 col.prop(active_layer, "texture_type")
                 if active_layer.texture_type == '0': # Image texture
                     row = col.row()
-                    row.label("Texture Path")
-                    row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Material'
+                    row.label(text="Texture Path")
+                    row.operator("object.search_texture", text="", icon='VIEWZOOM').target = 'Material'
                     row.prop(active_layer, "path", text="")
                     
                 elif active_layer.texture_type == '36':
@@ -243,9 +242,9 @@ class War3MaterialPanel(Panel):
 
 
                 
-class War3ParticleEditorPanel(Panel):
+class WAR3_PT_particle_editor_panel(Panel):
     """Creates a particle editor Panel in the Particles window"""
-    bl_idname = "OBJECT_PT_particle_editor_panel"
+    bl_idname = "WAR3_PT_particle_editor_panel"
     bl_label = "MDL Particle Emitter"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -261,9 +260,9 @@ class War3ParticleEditorPanel(Panel):
         psys = context.active_object.particle_systems.active.settings.mdl_particle_sys
         
         row = layout.row(align=True) 
-        row.menu('PARTICLE_MT_emitter_presets', text='Presets')
-        row.operator('particle.emitter_preset_add', text='', icon='ZOOMIN')
-        row.operator('particle.emitter_preset_add', text='', icon='ZOOMOUT').remove_active = True
+        row.menu('WAR3_MT_emitter_presets', text='Presets')
+        row.operator('particle.emitter_preset_add', text='', icon='ADD')
+        row.operator('particle.emitter_preset_add', text='', icon='REMOVE').remove_active = True
         
         layout.prop(psys, "emitter_type")
         
@@ -276,7 +275,7 @@ class War3ParticleEditorPanel(Panel):
             
             layout.separator()
             
-            layout.label("Emission Cone")
+            layout.label(text="Emission Cone")
             layout.prop(psys, "longitude")
             layout.prop(psys, "latitude")
             
@@ -285,8 +284,8 @@ class War3ParticleEditorPanel(Panel):
             # layout.prop(psys, "texture_path")
             
             row = layout.row()
-            row.label("Texture Path")
-            row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Emitter'
+            row.label(text="Texture Path")
+            row.operator("object.search_texture", text="", icon='VIEWZOOM').target = 'Emitter'
             row.prop(psys, "texture_path", text="")
             
             layout.separator()
@@ -299,18 +298,18 @@ class War3ParticleEditorPanel(Panel):
             layout.prop(psys, "life_span")
             layout.prop(psys, "gravity")
             
-            layout.label("Spritesheet Size")
+            layout.label(text="Spritesheet Size")
             row = layout.row()
             col = row.column()
-            col.label("Rows")
+            col.label(text="Rows")
             col.prop(psys, "rows")
             col = row.column()
-            col.label("Columns")
+            col.label(text="Columns")
             col.prop(psys, "cols")
         else:
             row = layout.row()
-            row.label("Texture Path")
-            row.operator("object.search_textures", text="", icon='VIEWZOOM').target = 'Emitter'
+            row.label(text="Texture Path")
+            row.operator("object.search_texture", text="", icon='VIEWZOOM').target = 'Emitter'
             row.prop(psys, "texture_path", text="")
             
             layout.prop(psys, "filter_mode")
@@ -329,92 +328,92 @@ class War3ParticleEditorPanel(Panel):
             
             layout.separator()
             
-            layout.label("Segments")
+            layout.label(text="Segments")
             row = layout.row()
             box = row.box()
-            box.label("Color")
+            box.label(text="Color")
             box.prop(psys, "start_color")
-            box.label("Alpha")
+            box.label(text="Alpha")
             box.prop(psys, "start_alpha")
-            box.label("Scale")
+            box.label(text="Scale")
             box.prop(psys, "start_scale")
             box = row.box()
-            box.label("Color")
+            box.label(text="Color")
             box.prop(psys, "mid_color")
-            box.label("Alpha")
+            box.label(text="Alpha")
             box.prop(psys, "mid_alpha")
-            box.label("Scale")
+            box.label(text="Scale")
             box.prop(psys, "mid_scale")
             box = row.box()
-            box.label("Color")
+            box.label(text="Color")
             box.prop(psys, "end_color")
-            box.label("Alpha")
+            box.label(text="Alpha")
             box.prop(psys, "end_alpha")
-            box.label("Scale")
+            box.label(text="Scale")
             box.prop(psys, "end_scale")
             
             layout.prop(psys, "time")
             
             layout.separator()
             
-            layout.label("Spritesheet Size")
+            layout.label(text="Spritesheet Size")
             row = layout.row()
             col = row.column()
-            col.label("Rows")
+            col.label(text="Rows")
             col.prop(psys, "rows")
             col = row.column()
-            col.label("Columns")
+            col.label(text="Columns")
             col.prop(psys, "cols")
             
             layout.separator()
             
             if psys.head and psys.rows * psys.cols > 1:
-                layout.label("Head Sprite Settings")
+                layout.label(text="Head Sprite Settings")
                 row = layout.row()
                 col = row.column()
-                col.label("Birth")
+                col.label(text="Birth")
                 box = col.box()
-                box.label("Start")
+                box.label(text="Start")
                 box.prop(psys, "head_life_start")
-                box.label("End")
+                box.label(text="End")
                 box.prop(psys, "head_life_end")
-                box.label("Repeat")
+                box.label(text="Repeat")
                 box.prop(psys, "head_life_repeat")
             
             
                 col = row.column()
-                col.label("Decay")
+                col.label(text="Decay")
                 box = col.box()
-                box.label("Start")
+                box.label(text="Start")
                 box.prop(psys, "head_decay_start")
-                box.label("End")
+                box.label(text="End")
                 box.prop(psys, "head_decay_end")
-                box.label("Repeat")
+                box.label(text="Repeat")
                 box.prop(psys, "head_decay_repeat")
                 layout.separator()
             
             if psys.tail and psys.rows * psys.cols > 1:
-                layout.label("Tail Sprite Settings")
+                layout.label(text="Tail Sprite Settings")
                 row = layout.row()
                 col = row.column()
-                col.label("Birth")
+                col.label(text="Birth")
                 box = col.box()
-                box.label("Start")
+                box.label(text="Start")
                 box.prop(psys, "tail_life_start")
-                box.label("End")
+                box.label(text="End")
                 box.prop(psys, "tail_life_end")
-                box.label("Repeat")
+                box.label(text="Repeat")
                 box.prop(psys, "tail_life_repeat")
                 
                 
                 col = row.column()
-                col.label("Decay")
+                col.label(text="Decay")
                 box = col.box()
-                box.label("Start")
+                box.label(text="Start")
                 box.prop(psys, "tail_decay_start")
-                box.label("End")
+                box.label(text="End")
                 box.prop(psys, "tail_decay_end")
-                box.label("Repeat")
+                box.label(text="Repeat")
                 box.prop(psys, "tail_decay_repeat")
             
             row = layout.row()
@@ -429,9 +428,9 @@ class War3ParticleEditorPanel(Panel):
             col.prop(psys, "head")
             col.prop(psys, "tail")
             
-class War3LightPanel(Panel):  
+class WAR3_PT_light_panel(Panel):  
     """Displays light properties in the lamp panel"""
-    bl_idname = "OBJECT_PT_light_panel"
+    bl_idname = "WAR3_PT_light_panel"
     bl_label = "MDL Light Settings"
     bl_region_type = 'WINDOW'
     bl_space_type = 'PROPERTIES'
@@ -439,16 +438,16 @@ class War3LightPanel(Panel):
     
     @classmethod
     def register(cls):
-        bpy.types.Lamp.mdl_light = PointerProperty(type=properties.War3LightSettings)
+        bpy.types.Light.mdl_light = PointerProperty(type=properties.War3LightSettings)
        
     @classmethod
     def unregister(cls):
-        del bpy.types.Lamp.mdl_light
+        del bpy.types.Light.mdl_light
                     
     @classmethod
     def poll(self,context):
         obj = context.active_object
-        return obj is not None and obj.type == 'LAMP'
+        return obj is not None and obj.type in ('LAMP', 'LIGHT')
 
     def draw(self, context):
         layout = self.layout

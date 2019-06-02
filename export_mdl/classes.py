@@ -56,7 +56,7 @@ class War3Model:
             mod.split_angle = obj.data.auto_smooth_angle
             # mod.use_edge_angle = True
             
-        mesh = obj.to_mesh(context.scene, apply_modifiers=True, settings='RENDER')
+        mesh = obj.to_mesh(preserve_all_data_layers=True)
         
         if obj.data.use_auto_smooth:
             obj.modifiers.remove(mod)
@@ -74,7 +74,7 @@ class War3Model:
         del bm
 
         mesh.calc_normals_split()
-        mesh.calc_tessface()
+        mesh.calc_loop_triangles()
 
         return mesh
        
@@ -122,9 +122,9 @@ class War3Model:
         mats = set()
         
         if settings.use_selection:
-            objs = (obj for obj in scene.objects if obj.is_visible(scene) and obj.select)
+            objs = (obj for obj in scene.objects if obj.select_get() and obj.visible_get())
         else:
-            objs = (obj for obj in scene.objects if obj.is_visible(scene))
+            objs = (obj for obj in scene.objects if obj.visible_get())
             
         for obj in objs:
             parent = War3Model.get_parent(obj)
@@ -164,10 +164,10 @@ class War3Model:
                 if getattr(data, "mdl_particle_sys"):
                     psys = War3ParticleSystem(obj.name, obj, self)
                     
-                    psys.pivot = settings.global_matrix * Vector(obj.location)
+                    psys.pivot = settings.global_matrix @ Vector(obj.location)
                     
                     # psys.dimensions = obj.matrix_world.to_quaternion() * Vector(obj.scale)
-                    psys.dimensions = Vector(map(abs, settings.global_matrix * obj.dimensions))
+                    psys.dimensions = Vector(map(abs, settings.global_matrix @ obj.dimensions))
                     
                     psys.parent = parent
                     psys.visibility = visibility
@@ -176,7 +176,7 @@ class War3Model:
                     if is_animated:
                         bone = War3Object(obj.name)
                         bone.parent = parent
-                        bone.pivot = settings.global_matrix * Vector(obj.location)
+                        bone.pivot = settings.global_matrix @ Vector(obj.location)
                         bone.anim_loc = anim_loc
                         bone.anim_rot = anim_rot
                         bone.anim_scale = anim_scale
@@ -210,14 +210,14 @@ class War3Model:
             elif obj.type == 'EMPTY' and obj.name.startswith('Collision'):
                 collider = War3Object(obj.name)
                 collider.parent = parent
-                collider.pivot = settings.global_matrix * Vector(obj.location)
+                collider.pivot = settings.global_matrix @ Vector(obj.location)
                 
                 if 'Box' in obj.name:
                     collider.type = 'Box'
                     corners = []
                     for corner in ((0.5, 0.5, -0.5), (-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (0.5, 0.5, 0.5), (-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (-0.5, 0.5, 0.5)):
-                        mat = settings.global_matrix * obj.matrix_world
-                        corners.append(mat.to_quaternion() * Vector(abs(x * obj.empty_draw_size * settings.global_matrix.median_scale) * y for x, y in zip(obj.scale, corner)))
+                        mat = settings.global_matrix @ obj.matrix_world
+                        corners.append(mat.to_quaternion() @ Vector(abs(x * obj.empty_display_size * settings.global_matrix.median_scale) * y for x, y in zip(obj.scale, corner)))
 
                     vmin, vmax = calc_extents(corners)
                     
@@ -225,12 +225,12 @@ class War3Model:
                     self.objects['collisionshape'].add(collider)
                 elif 'Sphere' in obj.name:
                     collider.type = 'Sphere'
-                    collider.verts = [settings.global_matrix * Vector(obj.location)]
-                    collider.radius = settings.global_matrix.median_scale * max(abs(x * obj.empty_draw_size) for x in obj.scale)
+                    collider.verts = [settings.global_matrix @ Vector(obj.location)]
+                    collider.radius = settings.global_matrix.median_scale * max(abs(x * obj.empty_display_size) for x in obj.scale)
                     self.objects['collisionshape'].add(collider)
                     
             elif obj.type == 'MESH' or obj.type == 'CURVE':
-                mesh = self.prepare_mesh(obj, context, settings.global_matrix * obj.matrix_world)
+                mesh = self.prepare_mesh(obj, context, settings.global_matrix @ obj.matrix_world)
                 
                 # Geoset Animation
                 vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)# get_curves(obj, 'color', (0, 1, 2))
@@ -256,14 +256,22 @@ class War3Model:
                     bone = War3Object(obj.name) # Object is animated or parent is missing - create a bone for it!
                     
                     bone.parent = parent # Remember to make it the parent - parent is added to matrices further down
-                    bone.pivot = settings.global_matrix * Vector(obj.location)
+                    bone.pivot = settings.global_matrix @ Vector(obj.location)
                     bone.anim_loc = anim_loc
                     bone.anim_rot = anim_rot
                     bone.anim_scale = anim_scale
-                    self.register_global_sequence(bone.anim_loc)
-                    self.register_global_sequence(bone.anim_rot)
+                    
+                    if bone.anim_loc is not None:
+                        self.register_global_sequence(bone.anim_loc)
+                        bone.anim_loc.transform_vec(obj.matrix_world.inverted())
+                        bone.anim_loc.transform_vec(settings.global_matrix)
+                        
+                    if bone.anim_rot is not None:
+                        self.register_global_sequence(bone.anim_rot)
+                        bone.anim_rot.transform_rot(obj.matrix_world.inverted())
+                        bone.anim_rot.transform_rot(settings.global_matrix)
+                        
                     self.register_global_sequence(bone.anim_scale)
-                    bone.matrix = settings.global_matrix * obj.matrix_world.inverted()
                     bone.billboarded = billboarded
                     bone.billboard_lock = billboard_lock
                     if geoset_anim is not None:
@@ -272,12 +280,12 @@ class War3Model:
                     parent = bone.name
                     
                     
-                for f in mesh.tessfaces:
-                    p = mesh.polygons[f.index]
+                for tri in mesh.loop_triangles:
+                    # p = mesh.polygons[f.index]
                     # Textures and materials
                     mat_name = "default"
                     if obj.material_slots and len(obj.material_slots):
-                        mat = obj.material_slots[p.material_index].material
+                        mat = obj.material_slots[tri.material_index].material
                         if mat is not None:
                             mat_name = mat.name
                             mats.add(mat)
@@ -295,10 +303,11 @@ class War3Model:
                         
                     # Vertices, faces, and matrices  
                     vertexmap = {}
-                    for vert, loop in zip(p.vertices, p.loop_indices):
+                    for vert, loop in zip(tri.vertices, tri.loops):
                         co = mesh.vertices[vert].co
                         coord = (rnd(co.x), rnd(co.y), rnd(co.z))
-                        n = mesh.vertices[vert].normal if f.use_smooth else f.normal
+                        n = mesh.vertices[vert].normal if tri.use_smooth else tri.normal
+                        # n = mesh.vertices[vert].normal if f.use_smooth else f.normal
                         norm = (rnd(n.x), rnd(n.y), rnd(n.z))
                         uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
                         uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
@@ -328,7 +337,7 @@ class War3Model:
                         vertexmap[vert] = geoset.vertices.index(vertex)
                             
                     # Triangles, normals, vertices, and UVs
-                    geoset.triangles.append((vertexmap[p.vertices[0]], vertexmap[p.vertices[1]], vertexmap[p.vertices[2]]))
+                    geoset.triangles.append((vertexmap[tri.vertices[0]], vertexmap[tri.vertices[1]], vertexmap[tri.vertices[2]]))
                     
                     mesh_geosets.add(geoset)
                     
@@ -337,13 +346,14 @@ class War3Model:
                     if not len(geoset.matrices) and parent is not None:
                         geoset.matrices.append([parent])
                             
-                bpy.data.meshes.remove(mesh)
+                obj.to_mesh_clear()
+                # bpy.data.meshes.remove(mesh)
                 
                 
             elif obj.type == 'EMPTY':
                 if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
                     eventobj = War3Object(obj.name)
-                    eventobj.pivot = settings.global_matrix * Vector(obj.location)
+                    eventobj.pivot = settings.global_matrix @ Vector(obj.location)
                     
                     for datapath in ('["event_track"]', '["eventtrack"]', '["EventTrack"]'):
                         eventobj.track = War3AnimationCurve.get(obj.animation_data, datapath, 1, self.sequences) # get_curve(obj, ['["eventtrack"]', '["EventTrack"]', '["event_track"]'])  
@@ -354,7 +364,7 @@ class War3Model:
                     self.objects['eventobject'].add(eventobj)
                 elif obj.name.endswith(" Ref"):
                     att = War3Object(obj.name)
-                    att.pivot = settings.global_matrix * Vector(obj.location)
+                    att.pivot = settings.global_matrix @ Vector(obj.location)
                     att.parent = parent
                     att.visibility = visibility
                     self.register_global_sequence(visibility)
@@ -365,7 +375,7 @@ class War3Model:
                     bone = War3Object(obj.name)
                     if parent is not None:
                         bone.parent = parent
-                    bone.pivot = settings.global_matrix * Vector(obj.location)
+                    bone.pivot = settings.global_matrix @ Vector(obj.location)
                     bone.anim_loc = anim_loc
                     bone.anim_scale = anim_scale
                     bone.anim_rot = anim_rot
@@ -390,7 +400,7 @@ class War3Model:
                 if parent is not None:
                     root.parent = parent
                     
-                root.pivot = settings.global_matrix * Vector(obj.location)
+                root.pivot = settings.global_matrix @ Vector(obj.location)
                 
                 root.anim_loc = anim_loc
                 root.anim_scale = anim_scale
@@ -421,8 +431,8 @@ class War3Model:
                     else:
                         bone.parent = root.name
                         
-                    bone.pivot = obj.matrix_world * Vector(b.bone.head_local) # Armature space to world space
-                    bone.pivot = settings.global_matrix * Vector(bone.pivot) # Axis conversion
+                    bone.pivot = obj.matrix_world @ Vector(b.bone.head_local) # Armature space to world space
+                    bone.pivot = settings.global_matrix @ Vector(bone.pivot) # Axis conversion
                     datapath = 'pose.bones[\"'+b.name+'\"].%s'
                     bone.anim_loc = War3AnimationCurve.get(obj.animation_data, datapath % 'location', 3, self.sequences) # get_curves(obj, datapath % 'location', (0, 1, 2))
                     # register_global_seq(bone.anim_loc, global_seqs, [('location', 0)])
@@ -442,23 +452,23 @@ class War3Model:
                     self.register_global_sequence(bone.anim_scale)
                     
                     if bone.anim_loc is not None:
-                        m = obj.matrix_world * b.bone.matrix_local
-                        bone.anim_loc.transform_vec(settings.global_matrix * m.to_3x3().to_4x4())
+                        m = obj.matrix_world @ b.bone.matrix_local
+                        bone.anim_loc.transform_vec(settings.global_matrix @ m.to_3x3().to_4x4())
                         self.register_global_sequence(bone.anim_loc)
                         
                     if bone.anim_rot is not None:
-                        mat_pose_ws = obj.matrix_world * b.bone.matrix_local
-                        mat_rest_ws = obj.matrix_world * b.matrix
+                        mat_pose_ws = obj.matrix_world @ b.bone.matrix_local
+                        mat_rest_ws = obj.matrix_world @ b.matrix
                         bone.anim_rot.transform_rot(mat_pose_ws)
                         bone.anim_rot.transform_rot(settings.global_matrix)
                         self.register_global_sequence(bone.anim_rot)
                     
                     self.objects['bone'].add(bone)
                     
-            elif obj.type == 'LAMP':
+            elif obj.type in ('LAMP', 'LIGHT'):
                 light = War3Object(obj.name)
                 light.object = obj
-                light.pivot = settings.global_matrix * Vector(obj.location)
+                light.pivot = settings.global_matrix @ Vector(obj.location)
                 light.billboarded = billboarded
                 light.billboard_lock = billboard_lock
                 
@@ -529,7 +539,6 @@ class War3Model:
                 self.textures.append(psys.emitter.texture_path)
              
         self.tvertex_anims = list(set((layer.texture_anim for layer in layers if layer.texture_anim is not None)))
-        print('TVertex Anim Count: %d' % len(self.tvertex_anims))
         
         vertices_all = []
         
@@ -658,51 +667,32 @@ class War3ParticleSystem(War3Object):
         # Animated properties
         
         if settings.animation_data is not None:
-            # curve = fcurves.find("mdl_particle_sys.emission_rate")
             self.emission_rate_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.emission_rate', 1, model.sequences)
             model.register_global_sequence(self.emission_rate_anim)
-            
-            #register_global_seq(psys.emission_rate_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.speed")
             self.speed_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.speed', 1, model.sequences)
             model.register_global_sequence(self.speed_anim)
-            #register_global_seq(psys.speed_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.life_span")
             self.life_span_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.life_span', 1, model.sequences)
             model.register_global_sequence(self.life_span_anim)
-            #register_global_seq(psys.life_span_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.gravity")
             self.gravity_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.gravity', 1, model.sequences)
             model.register_global_sequence(self.gravity_anim)
-            #register_global_seq(psys.gravity_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.variation")
             self.variation_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.variation', 1, model.sequences)
             model.register_global_sequence(self.variation_anim)
-            #register_global_seq(psys.variation_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.latitude")
             self.latitude_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.latitude', 1, model.sequences)
             model.register_global_sequence(self.latitude_anim)
-            #register_global_seq(psys.latitude_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.longitude")
             self.longitude_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.longitude', 1, model.sequences)
             model.register_global_sequence(self.longitude_anim)
-            #register_global_seq(psys.longitude_anim, global_seqs)
                 
-            # curve = fcurves.find("mdl_particle_sys.alpha")
             self.alpha_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.alpha', 1, model.sequences)
             model.register_global_sequence(self.alpha_anim)
-            #register_global_seq(psys.alpha_anim, global_seqs)
                 
-            # curves = get_curves(settings, "mdl_particle_sys.ribbon_color", (0, 1, 2))
             self.ribbon_color_anim = War3AnimationCurve.get(settings.animation_data, 'mdl_particle_sys.ribbon_color', 3, model.sequences)
             model.register_global_sequence(self.ribbon_color_anim)
-            #register_global_seq(psys.ribbon_color_anim, global_seqs, [0])
     
 class War3CollisionShape(War3Object):
     pass
@@ -875,10 +865,10 @@ class War3AnimationCurve:
             
     def transform_vec(self, matrix):
         for frame in self.keyframes.keys():
-            self.keyframes[frame] = tuple(matrix * Vector(self.keyframes[frame]))
+            self.keyframes[frame] = tuple(matrix @ Vector(self.keyframes[frame]))
             if self.interpolation == 'Bezier':
-                self.handles_right[frame] = tuple(matrix * Vector(self.handles_right[frame]))
-                self.handles_left[frame] = tuple(matrix * Vector(self.handles_left[frame]))
+                self.handles_right[frame] = tuple(matrix @ Vector(self.handles_right[frame]))
+                self.handles_left[frame] = tuple(matrix @ Vector(self.handles_left[frame]))
             
         
     def write_mdl(self, name, fw, global_seqs, indent="\t"):
@@ -964,7 +954,7 @@ class War3AnimationCurve:
    
         if anim_data and anim_data.action:
             for index in range(num_indices):
-                curve = anim_data.action.fcurves.find(data_path, index)
+                curve = anim_data.action.fcurves.find(data_path, index=index)
                 if curve is not None:
                     curves[(data_path.split('.')[-1], index)] = curve # For now, i'm just interested in the type, not the whole data path. Hence, the split returns the name after the last dot. 
             
@@ -1122,11 +1112,10 @@ class War3Material:
             layer.alpha_anim    = War3AnimationCurve.get(mat.animation_data, 'mdl_layers[%d].alpha' % i, 1, model.sequences) # get_curve(mat, {'mdl_layers[%d].alpha' % i})
             
             if mat.use_nodes:
-                uv_node = mat.node_tree.nodes.get(layer_settings.name, None)
+                uv_node = mat.node_tree.nodes.get(layer_settings.name)
                 if uv_node is not None and mat.node_tree.animation_data is not None:
                     layer.texture_anim = War3TextureAnim.get(mat.node_tree.animation_data, uv_node, model.sequences)
                     if layer.texture_anim is not None:
-                        print('Texture anim found!')
                         model.register_global_sequence(layer.texture_anim.translation)
                         model.register_global_sequence(layer.texture_anim.rotation)
                         model.register_global_sequence(layer.texture_anim.scale)

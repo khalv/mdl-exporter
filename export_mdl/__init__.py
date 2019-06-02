@@ -19,7 +19,7 @@
 bl_info = {
     "name": "MDL Exporter", 
     "author": "Kalle Halvarsson",
-    "blender": (2, 79, 0),
+    "blender": (2, 80, 0),
     "location": "File > Export > Warcraft MDL (.mdl)",
     "description": "Export mesh as Warcraft .MDL",
     "category": "Import-Export"} 
@@ -38,21 +38,47 @@ else:
 import bpy
 import os
 import shutil
+
+from bpy.utils import register_class, unregister_class
+
+classes = (
+    properties.War3MaterialLayerProperties,
+    properties.War3EventProperties,
+    properties.War3SequenceProperties,
+    properties.War3BillboardProperties,
+    properties.War3ParticleSystemProperties,
+    properties.War3LightSettings,
+    operators.WAR3_OT_export_mdl,
+    operators.WAR3_OT_search_event_type,
+    operators.WAR3_OT_search_event_id,
+    operators.WAR3_OT_search_texture,
+    operators.WAR3_OT_create_eventobject,
+    operators.WAR3_OT_create_collision_shape,
+    operators.WAR3_OT_material_list_action,
+    operators.WAR3_OT_emitter_preset_add,
+    operators.WAR3_MT_emitter_presets,
+    ui.WAR3_UL_sequence_list,
+    ui.WAR3_UL_material_layer_list,
+    ui.WAR3_PT_sequences_panel,
+    ui.WAR3_PT_event_panel,
+    ui.WAR3_PT_billboard_panel,
+    ui.WAR3_PT_material_panel,
+    ui.WAR3_PT_particle_editor_panel,
+    ui.WAR3_PT_light_panel
+)
         
 def menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
-    self.layout.operator(operators.War3ExportMDL.bl_idname,text="Warcraft MDL (.mdl)")  
+    self.layout.operator(operators.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
 
 def register():
-    bpy.utils.register_class(properties.War3MaterialLayerProperties)
-    bpy.utils.register_class(properties.War3EventProperties)
-    bpy.utils.register_module(__name__);
-    bpy.types.INFO_MT_file_export.append(menu_func)
+    for cls in classes:
+        register_class(cls)
+        
+    bpy.types.TOPBAR_MT_file_export.append(menu_func)
     
     presets_path = os.path.join(bpy.utils.user_resource('SCRIPTS', "presets"), "mdl_exporter")
     emitters_path = os.path.join(presets_path, "emitters")
-    
-    print(emitters_path)
     
     if not os.path.exists(emitters_path):
         os.makedirs(emitters_path)
@@ -62,10 +88,10 @@ def register():
     
     
 def unregister():
-    bpy.utils.unregister_class(properties.War3MaterialLayerProperties)
-    bpy.utils.unregister_class(properties.War3EventProperties)
-    bpy.utils.unregister_module(__name__);
-    bpy.types.INFO_MT_file_export.remove(menu_func)
+    for cls in reversed(classes):
+        unregister_class(cls)
+        
+    bpy.types.TOPBAR_MT_file_export.remove(menu_func)
     
 if __name__ == "__main__":
     register()

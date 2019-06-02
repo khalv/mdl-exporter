@@ -1,7 +1,11 @@
 import bpy
 import os 
 from bl_operators.presets import AddPresetBase
-from bpy.types import Menu
+
+from bpy.types import (
+        Menu, 
+        Operator
+        )
 
 from bpy.props import (
         FloatProperty,
@@ -13,8 +17,6 @@ from bpy.props import (
         IntVectorProperty,
         PointerProperty,
         )
-        
-from bpy.types import Operator
 
 from .properties import War3EventTypesContainer
 from .classes import War3ExportSettings
@@ -23,41 +25,46 @@ from bpy_extras.io_utils import (
         ImportHelper,
         ExportHelper,
         axis_conversion,
-        orientation_helper_factory,
+        orientation_helper,
         )
         
-from mathutils import Matrix
-        
-IOMDLOrientationHelper = orientation_helper_factory("IOMDLOrientationHelper", axis_forward='-X', axis_up='Z')  
-  
-class War3ExportMDL(Operator, ExportHelper, IOMDLOrientationHelper):
+from mathutils import Matrix 
+
+@orientation_helper(axis_forward='-X', axis_up='Z')
+class WAR3_OT_export_mdl(Operator, ExportHelper):
     """MDL Exporter"""
     bl_idname = 'export.mdl_exporter'
     bl_description = 'Warctaft 3 MDL Exporter'
     bl_label = 'Export .MDL'
-    filepath = bpy.props.StringProperty(subtype="FILE_PATH")
     filename_ext = ".mdl"
-    filter_glob = StringProperty(default="*.mdl", options={'HIDDEN'})
     
-    use_selection = BoolProperty(
+    filter_glob : StringProperty(
+            default="*.mdl", options={'HIDDEN'}
+            )
+    
+    filepath : StringProperty(
+            subtype="FILE_PATH"
+            )
+    
+    use_selection : BoolProperty(
             name="Selected Objects",
             description="Export only selected objects on visible layers",
             default=False,
             )
             
-    global_scale = FloatProperty(
+    global_scale : FloatProperty(
             name="Scale",
             min=0.01, 
             max=1000.0,
             default=60.0,
             )
             
-    optimize_animation = BoolProperty(
+    optimize_animation : BoolProperty(
             name="Optimize Keyframes",
             description="Remove keyframes if the resulting motion deviates less than the tolerance value."
             )
             
-    optimize_tolerance = FloatProperty(
+    optimize_tolerance : FloatProperty(
             name="Tolerance",
             min=0.001, 
             soft_max=0.1,
@@ -73,7 +80,7 @@ class War3ExportMDL(Operator, ExportHelper, IOMDLOrientationHelper):
         settings = War3ExportSettings()
         settings.global_matrix = axis_conversion(to_forward=self.axis_forward,
                                  to_up=self.axis_up,
-                                 ).to_4x4() * Matrix.Scale(self.global_scale, 4)
+                                 ).to_4x4() @ Matrix.Scale(self.global_scale, 4)
                                  
         settings.use_selection = self.use_selection
         settings.optimize_animation = self.optimize_animation
@@ -103,13 +110,13 @@ war3_event_types = War3EventTypesContainer()
 def event_items(self, context):
     return war3_event_types.enums[context.window_manager.events.event_type]
 
-class War3SearchEventTypes(Operator):
+class WAR3_OT_search_event_type(Operator):
     bl_idname = "object.search_eventtype"
     bl_label = "Search"
     bl_options = {'REGISTER', 'INTERNAL'}
     bl_property = "types"
     
-    types = EnumProperty(
+    types : EnumProperty(
                 name = "Event Type",
                 items = [('SND', "Sound", ""),
                          ('FTP', "Footprint", ""),
@@ -128,13 +135,13 @@ class War3SearchEventTypes(Operator):
         context.window_manager.events.event_type = self.types;
         return {'FINISHED'}
         
-class War3SearchEventId(Operator):
+class WAR3_OT_search_event_id(Operator):
     bl_idname = "object.search_eventid"
     bl_label = "Search"
     bl_options = {'REGISTER', 'INTERNAL'}
     bl_property = "ids"
     
-    ids = EnumProperty(
+    ids : EnumProperty(
                 name = "Event ID",
                 items = event_items,
             )
@@ -160,19 +167,19 @@ def load_texture_list():
     
 texture_paths = load_texture_list()
      
-class War3SearchTextures(Operator):
-    bl_idname = "object.search_textures"
+class WAR3_OT_search_texture(Operator):
+    bl_idname = "object.search_texture"
     bl_label = "Search"
     bl_options = {'REGISTER', 'INTERNAL'}
     bl_property = "path"
     
-    target = EnumProperty(
+    target : EnumProperty(
                 name = "Target Type",
                 items = [('Emitter', 'Emitter', ''),
                          ('Material', 'Material', '')]
             )
     
-    path = EnumProperty(
+    path : EnumProperty(
                 name = "Path",
                 items = texture_paths
             )
@@ -199,12 +206,12 @@ class War3SearchTextures(Operator):
         return {'FINISHED'}
         
   
-class War3CreateEventObject(Operator):
+class WAR3_OT_create_eventobject(Operator):
     bl_idname = "object.create_eventobject"
     bl_label = "Add MDL Event Object"
     
     def invoke(self, context, event):
-        bpy.ops.object.empty_add(type='PLAIN_AXES',radius=0.3,location=context.scene.cursor_location)
+        bpy.ops.object.empty_add(type='PLAIN_AXES',radius=0.25,location=context.scene.cursor.location)
             
         obj = context.active_object   
         
@@ -227,11 +234,11 @@ class War3CreateEventObject(Operator):
         
         return {'FINISHED'}
     
-class War3CreateCollisionShape(Operator):
+class WAR3_OT_create_collision_shape(Operator):
     bl_idname = "object.create_collision_shape"
     bl_label = "Add MDL Collision Shape"
     
-    shape = EnumProperty(
+    shape : EnumProperty(
             name = "Type",
             items = [('SPHERE', "Collision Sphere", ""),
                      ('CUBE', "Collision Box", "")],
@@ -243,7 +250,7 @@ class War3CreateCollisionShape(Operator):
         return wm.invoke_props_dialog(self)
         
     def execute(self, context):
-        bpy.ops.object.empty_add(type=self.shape, radius=1.0, view_align=False, location=context.scene.cursor_location)
+        bpy.ops.object.empty_add(type=self.shape, radius=1.0, align='WORLD', location=context.scene.cursor.location)
             
         obj = context.active_object
         counter = 0
@@ -256,7 +263,7 @@ class War3CreateCollisionShape(Operator):
         
         return {'FINISHED'}
         
-class War3MaterialListActions(Operator):
+class WAR3_OT_material_list_action(Operator):
     """Move items up and down, add and remove"""
     bl_idname = "custom.list_action"
     bl_label = "List Actions"
@@ -265,7 +272,7 @@ class War3MaterialListActions(Operator):
     
     name_counter = 0
 
-    action = EnumProperty(
+    action : EnumProperty(
         items=(
             ('UP', "Up", ""),
             ('DOWN', "Down", ""),
@@ -302,23 +309,24 @@ class War3MaterialListActions(Operator):
             if context.active_object:
                 item = mat.mdl_layers.add()
                 item.name = "Layer %d" % self.name_counter
-                War3MaterialListActions.name_counter += 1
+                WAR3_OT_material_list_action.name_counter += 1
                 mat.mdl_layer_index = len(mat.mdl_layers)-1
             else:
                 self.report({'INFO'}, "Nothing selected in the Viewport")
                 
         return {"FINISHED"}
    
-class PARTICLE_MT_emitter_presets(Menu):
+class WAR3_MT_emitter_presets(Menu):
     bl_label = "Emitter Presets"
     preset_subdir = "mdl_exporter/emitters"
     preset_operator = "script.execute_preset"
     draw = Menu.draw_preset
    
-class AddPresetParticleSystem(AddPresetBase, Operator):
+class WAR3_OT_emitter_preset_add(AddPresetBase, Operator):
     '''Add an Emitter Preset'''
     bl_idname = "particle.emitter_preset_add"
     bl_label = "Add Emitter Preset"
+    bl_options = {'INTERNAL'}
     preset_menu = "PARTICLE_MT_emitter_presets"
 
     # variable used for all preset values
