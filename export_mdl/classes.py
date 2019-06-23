@@ -56,7 +56,7 @@ class War3Model:
             mod.split_angle = obj.data.auto_smooth_angle
             # mod.use_edge_angle = True
             
-        mesh = obj.to_mesh(preserve_all_data_layers=True)
+        mesh = obj.to_mesh()
         
         if obj.data.use_auto_smooth:
             obj.modifiers.remove(mod)
