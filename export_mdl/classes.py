@@ -234,7 +234,14 @@ class War3Model:
                 
                 # Geoset Animation
                 vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)# get_curves(obj, 'color', (0, 1, 2))
-                vertexcolor = obj.color if any(i != 1 for i in obj.color) else None
+                vertexcolor = reversed(obj.color) if any(i != 1 for i in obj.color) else None
+                if vertexcolor is None and vertexcolor_anim is None:
+                    mat = obj.active_material
+                    if mat is not None and mat.node_tree.animation_data is not None:
+                        node = mat.node_tree.nodes.get("VertexColor")
+                        if node is not None:
+                            vertexcolor = reversed(tuple(node.inputs[0].default_value[:3]))
+                            vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].inputs[0].default_value', 3, self.sequences)
                 geoset_anim = None
                 geoset_anim_hash = 0
                 if any((vertexcolor, vertexcolor_anim, visibility)):
@@ -722,7 +729,7 @@ class War3AnimationCurve:
             self.type = 'Translation'
         elif 'scale' in data_path:
             self.type = 'Scale'
-        elif 'color' in data_path:
+        elif 'color' in data_path or 'default_value' in data_path:
             self.type = 'Color'
         elif 'event' in data_path.lower():
             self.type = 'Event'
