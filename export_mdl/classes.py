@@ -358,7 +358,7 @@ class War3Model:
                 
                 
             elif obj.type == 'EMPTY':
-                if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FPT") or obj.name.startswith("SPL"):
+                if obj.name.startswith("SND") or obj.name.startswith("UBR") or obj.name.startswith("FTP") or obj.name.startswith("SPL"):
                     eventobj = War3Object(obj.name)
                     eventobj.pivot = settings.global_matrix @ Vector(obj.location)
                     
