@@ -237,11 +237,12 @@ class War3Model:
                 vertexcolor = reversed(obj.color[:3]) if any(i != 1 for i in obj.color[:3]) else None
                 if vertexcolor is None and vertexcolor_anim is None:
                     mat = obj.active_material
-                    if mat is not None and hasattr(mat, "node_tree") and hasattr(mat.node_tree, "animation_data"):
+                    if mat is not None and hasattr(mat, "node_tree")
                         node = mat.node_tree.nodes.get("VertexColor")
                         if node is not None:
                             vertexcolor = reversed(tuple(node.inputs[0].default_value[:3]))
-                            vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].inputs[0].default_value', 3, self.sequences)
+                            if hasattr(mat.node_tree, "animation_data"):
+                                vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].inputs[0].default_value', 3, self.sequences)
                 geoset_anim = None
                 geoset_anim_hash = 0
                 if any((vertexcolor, vertexcolor_anim, visibility)):
