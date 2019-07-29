@@ -237,7 +237,7 @@ class War3Model:
                 vertexcolor = reversed(obj.color[:3]) if any(i != 1 for i in obj.color[:3]) else None
                 if vertexcolor is None and vertexcolor_anim is None:
                     mat = obj.active_material
-                    if mat is not None and hasattr(mat, "node_tree"):
+                    if mat is not None and hasattr(mat, "node_tree") and mat.node_tree is not None:
                         node = mat.node_tree.nodes.get("VertexColor")
                         if node is not None:
                             vertexcolor = reversed(tuple(node.inputs[0].default_value[:3]))
