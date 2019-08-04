@@ -55,8 +55,9 @@ class War3Model:
             mod = obj.modifiers.new("EdgeSplitExport", 'EDGE_SPLIT')
             mod.split_angle = obj.data.auto_smooth_angle
             # mod.use_edge_angle = True
-            
-        mesh = obj.to_mesh()
+        
+        depsgraph = context.evaluated_depsgraph_get()
+        mesh =  bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph)
         
         if obj.data.use_auto_smooth:
             obj.modifiers.remove(mod)
@@ -237,7 +238,7 @@ class War3Model:
                 vertexcolor = reversed(obj.color) if any(i != 1 for i in obj.color) else None
                 if vertexcolor is None and vertexcolor_anim is None:
                     mat = obj.active_material
-                    if mat is not None and hasattr(mat, "node_tree"):
+                    if mat is not None and hasattr(mat, "node_tree") and mat.node_tree is not None:
                         node = mat.node_tree.nodes.get("VertexColor")
                         if node is not None:
                             vertexcolor = reversed(tuple(node.inputs[0].default_value[:3]))
@@ -354,8 +355,8 @@ class War3Model:
                     if not len(geoset.matrices) and parent is not None:
                         geoset.matrices.append([parent])
                             
-                obj.to_mesh_clear()
-                # bpy.data.meshes.remove(mesh)
+                # obj.to_mesh_clear()
+                bpy.data.meshes.remove(mesh)
                 
                 
             elif obj.type == 'EMPTY':
