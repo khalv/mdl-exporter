@@ -3,7 +3,7 @@ Warcraft MDL exporter for Blender
 By Kalle Halvarsson
 
 ## Installation
-* Select your branch - master (2.79) or 2.8 depending on your Blender version, and download/clone. 
+* Select your branch - 2.79 or 2.8 depending on your Blender version, and download/clone. 
 * Add export_mdl folder to a zip or rar file
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
 * MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
