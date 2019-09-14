@@ -233,14 +233,17 @@ class War3Model:
                 mesh = self.prepare_mesh(obj, context, settings.global_matrix * obj.matrix_world)
                 
                 # Geoset Animation
-                vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)# get_curves(obj, 'color', (0, 1, 2))
-                vertexcolor = reversed(obj.color[:3]) if any(i != 1 for i in obj.color[:3]) else None
-                if vertexcolor is None and vertexcolor_anim is None:
+                vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)
+                vertexcolor = None
+                if any(i < 0.999 for i in obj.color):
+                    vertexcolor = tuple(reversed(obj.color))
+                    
+                if not any((vertexcolor, vertexcolor_anim)):
                     mat = obj.active_material
                     if mat is not None and hasattr(mat, "node_tree") and mat.node_tree is not None:
                         node = mat.node_tree.nodes.get("VertexColor")
                         if node is not None:
-                            vertexcolor = reversed(tuple(node.inputs[0].default_value[:3]))
+                            vertexcolor = tuple(reversed(tuple(node.inputs[0].default_value[:3])))
                             if hasattr(mat.node_tree, "animation_data"):
                                 vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].inputs[0].default_value', 3, self.sequences)
                 geoset_anim = None
@@ -961,9 +964,9 @@ class War3AnimationCurve:
         
     def __hash__(self):
         values = [self.interpolation, self.global_sequence, self.type]
-        values.append(tuple(self.keyframes.items()))
-        values.append(tuple(self.handles_left.items()))
-        values.append(tuple(self.handles_right.items()))
+        values.append(tuple(sorted(self.keyframes.items())))
+        values.append(tuple(sorted(self.handles_left.items())))
+        values.append(tuple(sorted(self.handles_right.items())))
         return hash(tuple(values))
                 
     @staticmethod
@@ -1044,7 +1047,7 @@ class War3GeosetAnim:
         return not self.__eq__(other)
         
     def __hash__(self):
-        return hash((self.color, hash(self.color_anim), hash(self.alpha_anim), hash(self.color)))
+        return hash((hash(self.color_anim), hash(self.alpha_anim), hash(self.color)))
         
 class War3Geoset:
     def __init__(self):
