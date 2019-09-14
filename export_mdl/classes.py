@@ -239,7 +239,6 @@ class War3Model:
                 if any(i < 0.999 for i in obj.color):
                     vertexcolor = tuple(reversed(obj.color))
                     
-                print("Vertex color: %s" % vertexcolor)
                 if not any((vertexcolor, vertexcolor_anim)):
                     mat = obj.active_material
                     if mat is not None and hasattr(mat, "node_tree") and mat.node_tree is not None:
@@ -254,8 +253,6 @@ class War3Model:
                     geoset_anim = War3GeosetAnim(vertexcolor, vertexcolor_anim, visibility)
                     geoset_anim_hash = hash(geoset_anim) # The hash is a bit complex, so we precompute it
                 mesh_geosets = set()
-                
-                print("%s hash: %d" % (obj.name, geoset_anim_hash))
                 
                 armature = None
                 for m in obj.modifiers:
@@ -1042,7 +1039,6 @@ class War3GeosetAnim:
         
     def __hash__(self):
         color_hash = 0 if self.color is None else hash(self.color)
-        print("Color hash: %d, %d" % (color_hash, self.color is None))
         return hash((hash(self.color_anim), hash(self.alpha_anim), color_hash))
         
 class War3Geoset:
