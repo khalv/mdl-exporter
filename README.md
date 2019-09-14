@@ -3,14 +3,11 @@ Warcraft MDL exporter for Blender
 By Kalle Halvarsson
 
 ## Installation
+* Select your branch - 2.79 or 2.8 depending on your Blender version, and download/clone.
 * Add export_mdl folder to a zip or rar file
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
 * MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
 * The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
-
-### 2.8 Support
-
-Support for Blender 2.8 is currently experimental - if you want to test it out, swap to the 2.8 branch and follow the instructions above. Note that there has been a lot of UI and hotkey changes for 2.8, so some details of this readme might not apply.
 
 ## Instructions
 This plugin tries to approximate the functionality of the Wc3 Art Tools exporter for 3ds Max. The ambition has been to support multiple ways of achieving the same result, so that users can set up their scene in whatever way feels most intuitive. There are, however, some implementation details you might need to know before using this plugin.
@@ -18,7 +15,7 @@ This plugin tries to approximate the functionality of the Wc3 Art Tools exporter
 ### Materials
 This exporter comes with a custom material editor which will attach extra MDL properties to the materials in your file. A material consists of multiple material layers, which will be rendered from top to bottom, and blended together using the specified filter mode. Some filter modes support an additional alpha multiplier, which can be animated. To add a texture animation, create a mapping node in the node graph with the same name as your layer, and animate its properties.
 
-![Material Editor](https://github.com/khalv/mdl-exporter/blob/master/images/Material%20Editor.jpg)
+![Material Editor](https://github.com/khalv/mdl-exporter/blob/2.8/images/Material%20Editor.jpg)
 
 Previously, there was a fallback solution which would attempt to create a material based on your node setup. This has now been deprecated. 
 
@@ -33,7 +30,7 @@ To mark sequences, create timeline markers (using the M key while hovering over 
 
 Whenever you create two timeline markers with the same name, a sequence will show up in the sequence manager tab, which is at the bottom of your scene tab in the properties menu. This is where you set things like looping and rarity - changing the name in the sequence editor will also change the corresponding timeline markers. If the name contains the word "Walk", you will also get to set a Movement Speed parameter which controls the relationship between the units movement speed and the walk animation playback rate. If you create a Death, Decay, or Attack animation, their non-looping values will default to "False" for convenience. 
 
-![Sequence Editor](https://raw.githubusercontent.com/khalv/mdl-exporter/master/images/Sequence%20Editor.jpg)
+![Sequence Editor](https://raw.githubusercontent.com/khalv/mdl-exporter/2.8/images/Sequence%20Editor.jpg)
 
 #### Global Sequences
 Adding a "Cycles" modifier to an f-curve will create a global sequence around it. Global sequences always start from frame 0. It is enough that one of the f-curves in a group has a modifier for a global sequence to be created. 
@@ -71,7 +68,7 @@ Create a light and go to the data tab where you will find a panel called "MDL Li
 ### Particle Systems
 The exporter has a custom editor for configuring particle systems. The data piggybacks on the Blender ParticleSystemSettings data block, so you need to create a particle system to make the MDL particle editor appear. This also allows for shared particle data among emitters - just remember to make it single-user first if you copy one so that you don't overwrite your old data. I've chosen to name the emitters "Model Emitter", and "Particle Emitter" rather than "ParticleEmitter" and "ParticleEmitter2", since it's more descriptive of what they do. Ribbons are also supported. The bounds of whatever object the particle system is attached to defines the width and height of the emitter - animating the X/Y scale of the object will animate the width and length of the exported emitter. Make sure not to apply the scale of the emitter since this will set the width/length to be 1 regardless of the actual emitter size (fix for this is in the works). 
 
-![Particle Editor](https://github.com/khalv/mdl-exporter/blob/master/images/Particle%20Editor.jpg)
+![Particle Editor](https://github.com/khalv/mdl-exporter/blob/2.8/images/Particle%20Editor.jpg)
 
 ### Known Issues
 
