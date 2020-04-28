@@ -236,17 +236,19 @@ class War3Model:
                 # Geoset Animation
                 vertexcolor_anim = War3AnimationCurve.get(obj.animation_data, 'color', 3, self.sequences)
                 vertexcolor = None
-                if any(i < 0.999 for i in obj.color):
-                    vertexcolor = tuple(reversed(obj.color))
+                
+                if any(i < 0.999 for i in obj.color[:3]):
+                    vertexcolor = tuple(obj.color[:3])
                     
                 if not any((vertexcolor, vertexcolor_anim)):
                     mat = obj.active_material
                     if mat is not None and hasattr(mat, "node_tree") and mat.node_tree is not None:
                         node = mat.node_tree.nodes.get("VertexColor")
                         if node is not None:
-                            vertexcolor = tuple(reversed(tuple(node.inputs[0].default_value[:3])))
+                            attr = "outputs" if node.bl_idname == 'ShaderNodeRGB' else "inputs"
+                            vertexcolor = tuple(getattr(node, attr)[0].default_value[:3])
                             if hasattr(mat.node_tree, "animation_data"):
-                                vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].inputs[0].default_value', 3, self.sequences)
+                                vertexcolor_anim = War3AnimationCurve.get(mat.node_tree.animation_data, 'nodes["VertexColor"].%s[0].default_value' % attr, 3, self.sequences)
                 geoset_anim = None
                 geoset_anim_hash = 0
                 if any((vertexcolor, vertexcolor_anim, visibility)):
@@ -319,7 +321,6 @@ class War3Model:
                         co = mesh.vertices[vert].co
                         coord = (rnd(co.x), rnd(co.y), rnd(co.z))
                         n = mesh.vertices[vert].normal if tri.use_smooth else tri.normal
-                        # n = mesh.vertices[vert].normal if f.use_smooth else f.normal
                         norm = (rnd(n.x), rnd(n.y), rnd(n.z))
                         uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
                         uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
@@ -330,10 +331,16 @@ class War3Model:
                         if armature is not None:
                             vgroups = sorted(mesh.vertices[vert].groups[:], key=lambda x:x.weight, reverse=True) # Sort bones by descending weight
                             if len(vgroups):
+                                # Warcraft does not support vertex weights, so we exclude groups with too small influence
                                 groups = list(obj.vertex_groups[vg.group].name for vg in vgroups if (obj.vertex_groups[vg.group].name in bone_names and vg.weight > 0.25))[:3]
                                 if not len(groups):
-                                    groups = [parent]
-                        elif parent is not None:
+                                    for vg in vgroups:
+                                        # If we didn't find a group, just take the best match (the list is already sorted by weight)
+                                        if obj.vertex_groups[vg.group].name in bone_manes:
+                                            groups = [obj.vertex_groups[vg.group].name]
+                                            break
+                            
+                        if parent is not None and (groups is None or len(groups) == 0):
                             groups = [parent]
                                     
                         if groups is not None:
@@ -397,6 +404,8 @@ class War3Model:
                     if bone.anim_loc is not None:
                         self.register_global_sequence(bone.anim_loc)
                         bone.anim_loc.transform_vec(obj.matrix_world.inverted())
+                        # if obj.parent is not None:
+                        #     bone.anim_loc.transform_vec(obj.parent.matrix_world.inverted())
                         bone.anim_loc.transform_vec(settings.global_matrix)
                         
                     if bone.anim_rot is not None:
@@ -422,12 +431,14 @@ class War3Model:
                 
                 if root.anim_loc is not None:
                     self.register_global_sequence(root.anim_loc)
-                    root.anim_loc.transform_vec(obj.matrix_world.inverted())
+                    if obj.parent is not None:
+                        root.anim_loc.transform_vec(obj.parent.matrix_world.inverted())
                     root.anim_loc.transform_vec(settings.global_matrix)
                     
                 if root.anim_rot is not None:
                     self.register_global_sequence(root.anim_rot)
-                    root.anim_rot.transform_rot(obj.matrix_world.inverted())
+                    if obh.parent is not None:
+                        root.anim_rot.transform_rot(obj.parent.matrix_world.inverted())
                     root.anim_rot.transform_rot(settings.global_matrix)
                 
                 root.visibility = visibility
@@ -447,7 +458,7 @@ class War3Model:
                     bone.pivot = settings.global_matrix @ Vector(bone.pivot) # Axis conversion
                     datapath = 'pose.bones[\"'+b.name+'\"].%s'
                     bone.anim_loc = War3AnimationCurve.get(obj.animation_data, datapath % 'location', 3, self.sequences) # get_curves(obj, datapath % 'location', (0, 1, 2))
-                    # register_global_seq(bone.anim_loc, global_seqs, [('location', 0)])
+
                     if settings.optimize_animation and bone.anim_loc is not None:
                         bone.anim_loc.optimize(settings.optimize_tolerance, self.sequences)
 
@@ -491,32 +502,26 @@ class War3Model:
                     light.intensity = light_data.intensity
                     light.intensity_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.intensity', 1, self.sequences) #get_curve(obj.data, ['mdl_light.intensity'])
                     self.register_global_sequence(light.intensity_anim)
-                    # register_global_seq(light.intensity_anim, global_seqs)
                     
                     light.atten_start = light_data.atten_start
                     light.atten_start_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.atten_start', 1, self.sequences) # get_curve(obj.data, ['mdl_light.atten_start'])
                     self.register_global_sequence(light.atten_start_anim)
-                    # register_global_seq(light.atten_start_anim, global_seqs)
                         
                     light.atten_end = light_data.atten_end
                     light.atten_end_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.atten_end', 1, self.sequences) # get_curve(obj.data, ['mdl_light.atten_end'])
                     self.register_global_sequence(light.atten_end_anim)
-                    # register_global_seq(light.atten_end_anim, global_seqs)
                     
                     light.color = light_data.color
                     light.color_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.color', 3, self.sequences) # get_curve(obj.data, ['mdl_light.color'])
                     self.register_global_sequence(light.color_anim)
-                    # register_global_seq(light.color_anim, global_seqs, [0])
                         
                     light.amb_color = light_data.amb_color
                     light.amb_color_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.amb_color', 3, self.sequences) # get_curve(obj.data, ['mdl_light.amb_color'])
                     self.register_global_sequence(light.amb_color_anim)
-                    # register_global_seq(light.amb_color_anim, global_seqs, [0])
                         
                     light.amb_intensity = light_data.amb_intensity
                     light.amb_intensity_anim = War3AnimationCurve.get(obj.data.animation_data, 'mdl_light.amb_intensity', 1, self.sequences) # get_curve(obj.data, ['obj.mdl_light.amb_intensity'])
                     self.register_global_sequence(light.amb_intensity_anim)
-                    # register_global_seq(light.amb_intensity_anim, global_seqs)
                         
                 light.visibility = visibility
                 self.register_global_sequence(visibility)
@@ -624,9 +629,7 @@ class War3Model:
         max_extents = tuple(max(vertices,key=itemgetter(i))[i] for i in range(3))
         min_extents = tuple(min(vertices,key=itemgetter(i))[i] for i in range(3))
         
-        return min_extents, max_extents
-        
-        
+        return min_extents, max_extents  
 
 class War3Object: # Stores information about an MDL object (not a blender object!)
     def __init__(self, name):
@@ -656,6 +659,11 @@ class War3Object: # Stores information about an MDL object (not a blender object
         # return hash(tuple(sorted(self.__dict__.items())))
         return hash(self.name)
 
+class War3Bone(War3Object):
+    def __unit__(self, obj, model):
+        War3Object.__init__(self, obj.name)
+        model.objects['bone'].add(self) 
+        
 class War3ParticleSystem(War3Object):
     def __init__(self, name, obj, model):
         War3Object.__init__(self, name)
@@ -1003,9 +1011,14 @@ class War3TextureAnim:
     def get(anim_data, uv_node, sequences):
         anim = War3TextureAnim()
         if anim_data.action:
-            anim.translation = War3AnimationCurve.get(anim_data, 'nodes["%s"].translation' % uv_node.name, 3, sequences)
-            anim.rotation = War3AnimationCurve.get(anim_data, 'nodes["%s"].rotation' % uv_node.name, 3, sequences)
-            anim.scale = War3AnimationCurve.get(anim_data, 'nodes["%s"].scale' % uv_node.name, 3, sequences)
+            if len(uv_node.inputs) > 1: # 2.81 Mapping Node
+                anim.translation = War3AnimationCurve.get(anim_data, 'nodes["%s"].inputs["Location"].default_value' % uv_node.name, 3, sequences)
+                anim.rotation = War3AnimationCurve.get(anim_data, 'nodes["%s"].inputs["Rotation"].default_value' % uv_node.name, 3, sequences)
+                anim.scale = War3AnimationCurve.get(anim_data, 'nodes["%s"].inputs["Scale"].default_value' % uv_node.name, 3, sequences)
+            else:
+                anim.translation = War3AnimationCurve.get(anim_data, 'nodes["%s"].translation' % uv_node.name, 3, sequences)
+                anim.rotation = War3AnimationCurve.get(anim_data, 'nodes["%s"].rotation' % uv_node.name, 3, sequences)
+                anim.scale = War3AnimationCurve.get(anim_data, 'nodes["%s"].scale' % uv_node.name, 3, sequences)
                     
         return anim if any((anim.translation, anim.rotation, anim.scale)) else None
         
