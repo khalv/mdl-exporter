@@ -336,7 +336,7 @@ class War3Model:
                                 if not len(groups):
                                     for vg in vgroups:
                                         # If we didn't find a group, just take the best match (the list is already sorted by weight)
-                                        if obj.vertex_groups[vg.group].name in bone_manes:
+                                        if obj.vertex_groups[vg.group].name in bone_names:
                                             groups = [obj.vertex_groups[vg.group].name]
                                             break
                             
