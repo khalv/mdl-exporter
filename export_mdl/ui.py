@@ -32,7 +32,7 @@ class WAR3_PT_sequences_panel(Panel):
     @classmethod
     def poll(self,context):
 
-        sequences = context.scene.mdl_sequences     
+        sequences = context.scene.mdl_sequences
         return len(sequences) > 0
         
     def draw(self, context):
@@ -44,6 +44,8 @@ class WAR3_PT_sequences_panel(Panel):
         
         sequences = getattr(scene, "mdl_sequences", None)
         index = getattr(scene, "mdl_sequence_index", None)
+        
+        layout.operator("custom.add_anim_sequence", text="Add Sequence")
         
         if sequences is not None and len(sequences):
             active_sequence = sequences[index]

@@ -263,6 +263,67 @@ class WAR3_OT_create_collision_shape(Operator):
         
         return {'FINISHED'}
         
+class WAR3_OT_add_anim_sequence(Operator):
+    bl_idname = "custom.add_anim_sequence"
+    bl_label = "Add Sequence"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    
+    name : StringProperty(
+        name = "Name",
+        default = "Stand"
+        )
+    
+    start : IntProperty(
+        name = "Start Frame",
+        default = 1
+        )
+    
+    end : IntProperty(
+        name = "End Frame",
+        default = 100
+        )
+    
+    rarity : IntProperty(
+        name = "Rarity",
+        default = 0
+        )
+    
+    non_looping : BoolProperty(
+        name = "Non Looping",
+        default = False
+        )
+
+    def invoke(self, context, event):
+        for name in ["Stand", "Birth", "Death"]:
+            if name not in (s.name for s in context.window.scene.mdl_sequences):
+                self.name = name
+    
+        return context.window_manager.invoke_props_dialog(self, width = 400)
+        
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "name")
+        layout.prop(self, "start")
+        layout.prop(self, "end")
+        layout.prop(self, "rarity")
+        layout.prop(self, "non_looping")
+
+    def execute(self, context):
+        scene = context.window.scene
+        sequences = scene.mdl_sequences
+
+        scene.timeline_markers.new(self.name, frame=self.start)
+        scene.timeline_markers.new(self.name, frame=self.end)
+        
+        s = sequences.add()
+        s.name = self.name
+        s.rarity = self.rarity
+        s.non_looping = self.non_looping
+        
+        scene.mdl_sequence_index = len(sequences) - 1
+        
+        return {'FINISHED'}
+        
 class WAR3_OT_material_list_action(Operator):
     """Move items up and down, add and remove"""
     bl_idname = "custom.list_action"

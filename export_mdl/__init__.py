@@ -56,6 +56,7 @@ classes = (
     operators.WAR3_OT_create_collision_shape,
     operators.WAR3_OT_material_list_action,
     operators.WAR3_OT_emitter_preset_add,
+    operators.WAR3_OT_add_anim_sequence,
     operators.WAR3_MT_emitter_presets,
     ui.WAR3_UL_sequence_list,
     ui.WAR3_UL_material_layer_list,
