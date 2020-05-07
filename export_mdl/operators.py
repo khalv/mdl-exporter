@@ -294,9 +294,16 @@ class WAR3_OT_add_anim_sequence(Operator):
         )
 
     def invoke(self, context, event):
-        for name in ["Stand", "Birth", "Death"]:
-            if name not in (s.name for s in context.window.scene.mdl_sequences):
+        scene = context.window.scene
+        for name in ["Stand", "Birth", "Death", "Decay", "Portrait"]:
+            if name not in (s.name for s in scene.mdl_sequences):
                 self.name = name
+                break
+                
+        if len(scene.mdl_sequences):
+            last = max([s.end for s in scene.mdl_sequences])
+            self.start = last + 10
+            self.end = self.start + 100
     
         return context.window_manager.invoke_props_dialog(self, width = 400)
         
