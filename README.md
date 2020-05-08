@@ -25,6 +25,8 @@ MDL files split up meshes into "geosets" based on material and geoset animation.
 ### Animations
 It is possible to animate the position, scale and rotation of bones or meshes. You can also animate an object's visibility by keyframing the "render visibility" property (you can do this by holding your mouse over the render icon in the outliner and pressing the I key) - optionally, you can create a custom property called "visibility" and animate that. Using the Color field of an object, you can animate its tint value (setting the value to anything else but white will also create a static color GeosetAnim for it). Linear, DontInterp, and Bezier interpolation modes are currently supported, though rotations can only use Linear interpolation as of right now.
 
+IMPORTANT: When exporting animations, the bone transforms at frame 0 will be used as the reference pose and all animations will be converted to be relative to this. For this reason, make sure to add keyframes for all of your animation curves on the first frame of your animation timeline. 
+
 #### Sequences
 To mark sequences, create timeline markers (using the M key while hovering over the timeline) and rename them (using CTRL+M) to the name of your animation. Each sequence requires both a start and an end key with the same name. This approach was chosen over using acitons because it was deemed to be more intuitive and similar to how the process works in Wc3 Art Tools. If no sequence exists, a default one will be added on export.
 
