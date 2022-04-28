@@ -17,11 +17,11 @@
 # ##### END GPL LICENSE BLOCK #####
 
 bl_info = {
-    "name": "MDL Exporter", 
+    "name": "MDL Importer/Exporter", 
     "author": "Kalle Halvarsson",
     "blender": (2, 80, 0),
     "location": "File > Export > Warcraft MDL (.mdl)",
-    "description": "Export mesh as Warcraft .MDL",
+    "description": "Import or export Warcraft .MDL models",
     "category": "Import-Export"} 
 
 
@@ -31,9 +31,10 @@ if "bpy" in locals():
   imp.reload(operators)
   imp.reload(classes)
   imp.reload(export_mdl)
+  imp.reload(import_mdl)
   imp.reload(ui)
 else:
-  from . import properties, operators, classes, export_mdl, ui
+  from . import properties, operators, classes, export_mdl, import_mdl, ui
 
 import bpy
 import os
@@ -49,6 +50,7 @@ classes = (
     properties.War3ParticleSystemProperties,
     properties.War3LightSettings,
     operators.WAR3_OT_export_mdl,
+    operators.WAR3_OT_import_mdl,
     operators.WAR3_OT_search_event_type,
     operators.WAR3_OT_search_event_id,
     operators.WAR3_OT_search_texture,
@@ -68,17 +70,22 @@ classes = (
     ui.WAR3_PT_light_panel
 )
         
-def menu_func(self, context):
+def export_menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
     self.layout.operator(operators.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
+
+def import_menu_func(self, context):
+    self.layout.operator_context = 'INVOKE_DEFAULT'
+    self.layout.operator(operators.WAR3_OT_import_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
 
 def register():
     for cls in classes:
         register_class(cls)
         
-    bpy.types.TOPBAR_MT_file_export.append(menu_func)
+    bpy.types.TOPBAR_MT_file_export.append(export_menu_func)
+    bpy.types.TOPBAR_MT_file_import.append(import_menu_func)
     
-    presets_path = os.path.join(bpy.utils.user_resource('SCRIPTS', "presets"), "mdl_exporter")
+    presets_path = os.path.join(bpy.utils.user_resource('SCRIPTS', path="presets"), "mdl_exporter")
     emitters_path = os.path.join(presets_path, "emitters")
     
     if not os.path.exists(emitters_path):
@@ -92,7 +99,8 @@ def unregister():
     for cls in reversed(classes):
         unregister_class(cls)
         
-    bpy.types.TOPBAR_MT_file_export.remove(menu_func)
+    bpy.types.TOPBAR_MT_file_export.remove(export_menu_func)
+    bpy.types.TOPBAR_MT_file_import.remove(import_menu_func)
     
 if __name__ == "__main__":
     register()

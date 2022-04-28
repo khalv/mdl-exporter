@@ -420,21 +420,21 @@ class War3ParticleSystemProperties(PropertyGroup):
         default = False
         )
        
-    emission_rate : IntProperty(
+    emission_rate : FloatProperty(
         name = "Emission Rate",
         description = "Amount of particles emitted per second.",
         options = {'ANIMATABLE'},
-        min = 0,
-        default = 100
+        min = 0.0,
+        default = 100.0
         )
-    speed : IntProperty(
+    speed : FloatProperty(
         name = "Speed",
         description = "The velocity of each particle.",
         options = {'ANIMATABLE'},
         default = 100
         )
         
-    latitude : IntProperty(
+    latitude : FloatProperty(
         name = "Latitude",
         description = "How far particles can deviate from the emisison axis.",
         options = {'ANIMATABLE'},
@@ -508,19 +508,19 @@ class War3ParticleSystemProperties(PropertyGroup):
         default = 255
         )
         
-    start_scale : IntProperty(
+    start_scale : FloatProperty(
         name = "",
         min = 0,
         default = 1
         )
         
-    mid_scale : IntProperty(
+    mid_scale : FloatProperty(
         name = "",
         min = 0,
         default = 1
         )
         
-    end_scale : IntProperty(
+    end_scale : FloatProperty(
         name = "",
         min = 0,
         default = 1
