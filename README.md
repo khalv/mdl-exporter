@@ -1,10 +1,12 @@
-# mdl-exporter
+# mdl-importer/exporter
 Warcraft MDL exporter for Blender
 By Kalle Halvarsson
 
+Now also supports importing!
+
 ## Installation
 * Select your branch - 2.79 or 2.8 depending on your Blender version, and download/clone.
-* Add export_mdl folder to a zip or rar file
+* Add export_mdl folder to a zip or rar file. It should be one next to the "images" folder - not the one containing the full repository!
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
 * MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
 * The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
@@ -85,4 +87,21 @@ The exporter has a custom editor for configuring particle systems. The data pigg
 * When using empties as bones: all translation animations will be transformed to be relative to the object on the first frame, since Blender stores animations in absolute world position while MDL models store translation as relative to the rest pose and parent. This might cause some issues in situations where the bone is a child of a bone with a rotation animation, though i'm not sure. 
 * Support for animated witdh/length for particle systems is currently broken. 
 
+#NEW! MDL Importer
 
+This plugin is now also capable of importing MDL files. A major benefit of this is that it effectively works as reference for how to replicate the behaviour of native models when making your own.
+
+## Materials
+The importer will auto-generate node setups for all materials. If a material layer uses an image, the importer will attempt to load a .PNG file with the same name in the same folder as the source model - so if you have extracted all textures before importing, the model will look as in-game out of the box. Team color is represented by a solid red RGB node, team glow by a red-tinted spherical gradient, and replaceable textures by a checker texture. Vertex coloring will be multiplied in. Overall, the system will create mix nodes to combine layers in quite a sophisticated way, and set the correct alpha output (though keep in mind that if the image is missing, the alpha will be null, making the material appear transparent in previews)
+
+![Imported Nodes](https://github.com/khalv/mdl-exporter/blob/2.8/images/Imported%20Nodes.jpg)
+
+## Skinned Meshes
+Geosets with more than one matrix group will be imported as a skinned mesh, and all bones that are parents of a skinned bone will be added to an armature. There will only ever be one armature created. Bones will be oriented towards their child, unless there is more than one child, in which case it will orient towards their average position. It's very hard to replicate the original bone structure, but this provides good results in most cases.
+
+## Known Issues
+
+* Ribbon and model emitters are not supported yet.
+* Some value animations might not be imported correctly
+* Cameras and lights are still fairly untested
+* Hermite interpolation for rotation animations is currently not supported - will default to linear.
