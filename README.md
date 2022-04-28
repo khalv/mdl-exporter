@@ -87,7 +87,7 @@ The exporter has a custom editor for configuring particle systems. The data pigg
 * When using empties as bones: all translation animations will be transformed to be relative to the object on the first frame, since Blender stores animations in absolute world position while MDL models store translation as relative to the rest pose and parent. This might cause some issues in situations where the bone is a child of a bone with a rotation animation, though i'm not sure. 
 * Support for animated witdh/length for particle systems is currently broken. 
 
-#NEW! MDL Importer
+# NEW! MDL Importer
 
 This plugin is now also capable of importing MDL files. A major benefit of this is that it effectively works as reference for how to replicate the behaviour of native models when making your own.
 
