@@ -1,22 +1,19 @@
-
-from .classes import (
-    War3Model,
-    War3Bone,
-    War3Object,
-    War3Material,
-    War3EventObject,
-    War3AnimationSequence,
-    War3AnimationCurve,
-    War3Geoset,
-    War3GeosetAnim,
-    War3MaterialLayer,
-    War3Texture,
-    War3Camera,
-    War3TextureAnim,
-    War3CollisionShape,
-    War3Light,
-    War3ParticleSystem
-)
+from .classes.War3Model import War3Model
+from .classes.War3Bone import War3Bone
+from .classes.War3Object import War3Object
+from .classes.War3Material import War3Material
+from .classes.War3AnimationSequence import War3AnimationSequence
+from .classes.War3AnimationCurve import War3AnimationCurve
+from .classes.War3Geoset import War3Geoset
+from .classes.War3MaterialLayer import War3MaterialLayer
+from .classes.War3Texture import War3Texture
+from .classes.War3Camera import War3Camera
+from .classes.War3TextureAnim import War3TextureAnim
+from .classes.War3Light import War3Light
+from .classes.War3ParticleSystem import War3ParticleSystem
+from .classes.War3CollisionShape import War3CollisionShape
+from .classes.War3EventObject import War3EventObject
+from .classes.War3GeosetAnim import War3GeosetAnim
 
 import os.path
 
@@ -310,7 +307,7 @@ class MDLParser:
 
     def parse_event_object(self, name):
         print("Parsing event object %s" % name)
-        event = War3Object(name)
+        event = War3EventObject(name)
 
         base_scope = self.scope
 
@@ -454,7 +451,7 @@ class MDLParser:
 
     def parse_collision_shape(self, name):
         print("Parsing collision shape %s" % name)
-        shape = War3Object(name)
+        shape = War3CollisionShape(name)
 
         base_scope = self.scope
 

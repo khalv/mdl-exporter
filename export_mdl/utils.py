@@ -1,6 +1,4 @@
 import bpy
-import bpy
-import bmesh
 import math
 from operator import itemgetter
 

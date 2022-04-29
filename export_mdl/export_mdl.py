@@ -1,23 +1,8 @@
-import bpy
 import itertools
-import math
 import getpass
 import datetime
 
-from mathutils import Vector
-
-from .classes import (
-    War3Model,
-    War3Object,
-    War3TextureAnim,
-    War3AnimationSequence,
-    War3AnimationCurve,
-    War3ParticleSystem,
-    War3GeosetAnim,
-    War3Geoset,
-    War3MaterialLayer,
-    War3Material
-    )
+from .classes.War3Model import War3Model
     
 from .utils import *
 

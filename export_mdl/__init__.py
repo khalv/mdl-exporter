@@ -22,68 +22,40 @@ bl_info = {
     "blender": (2, 80, 0),
     "location": "File > Export > Warcraft MDL (.mdl)",
     "description": "Import or export Warcraft .MDL models",
-    "category": "Import-Export"} 
-
+    "category": "Import-Export"
+    } 
 
 if "bpy" in locals():
-  import imp
-  imp.reload(properties)
-  imp.reload(operators)
-  imp.reload(classes)
-  imp.reload(export_mdl)
-  imp.reload(import_mdl)
-  imp.reload(ui)
+    import importlib
+    importlib.reload(properties)
+    importlib.reload(operators)
+    importlib.reload(ui)
 else:
-  from . import properties, operators, classes, export_mdl, import_mdl, ui
+    from . import properties
+    from . import operators
+    from . import ui
 
 import bpy
 import os
 import shutil
-
-from bpy.utils import register_class, unregister_class
-
-classes = (
-    properties.War3MaterialLayerProperties,
-    properties.War3EventProperties,
-    properties.War3SequenceProperties,
-    properties.War3BillboardProperties,
-    properties.War3ParticleSystemProperties,
-    properties.War3LightSettings,
-    operators.WAR3_OT_export_mdl,
-    operators.WAR3_OT_import_mdl,
-    operators.WAR3_OT_search_event_type,
-    operators.WAR3_OT_search_event_id,
-    operators.WAR3_OT_search_texture,
-    operators.WAR3_OT_create_eventobject,
-    operators.WAR3_OT_create_collision_shape,
-    operators.WAR3_OT_material_list_action,
-    operators.WAR3_OT_emitter_preset_add,
-    operators.WAR3_OT_add_anim_sequence,
-    operators.WAR3_MT_emitter_presets,
-    ui.WAR3_UL_sequence_list,
-    ui.WAR3_UL_material_layer_list,
-    ui.WAR3_PT_sequences_panel,
-    ui.WAR3_PT_event_panel,
-    ui.WAR3_PT_billboard_panel,
-    ui.WAR3_PT_material_panel,
-    ui.WAR3_PT_particle_editor_panel,
-    ui.WAR3_PT_light_panel
-)
         
 def export_menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
-    self.layout.operator(operators.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
+    self.layout.operator(operators.WAR3_OT_export_mdl.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
 
 def import_menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
-    self.layout.operator(operators.WAR3_OT_import_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
+    self.layout.operator(operators.WAR3_OT_import_mdl.WAR3_OT_import_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
 
 def register():
-    for cls in classes:
+    from bpy.utils import register_class
+
+    for cls in properties.classes + operators.classes + ui.classes:
         register_class(cls)
         
     bpy.types.TOPBAR_MT_file_export.append(export_menu_func)
     bpy.types.TOPBAR_MT_file_import.append(import_menu_func)
+    bpy.types.VIEW3D_MT_add.append(ui.WAR3_MT_add_object.menu_func)
     
     presets_path = os.path.join(bpy.utils.user_resource('SCRIPTS', path="presets"), "mdl_exporter")
     emitters_path = os.path.join(presets_path, "emitters")
@@ -96,11 +68,14 @@ def register():
     
     
 def unregister():
-    for cls in reversed(classes):
-        unregister_class(cls)
+    from bpy.utils import unregister_class
         
     bpy.types.TOPBAR_MT_file_export.remove(export_menu_func)
     bpy.types.TOPBAR_MT_file_import.remove(import_menu_func)
+    bpy.types.VIEW3D_MT_add.remove(ui.WAR3_MT_add_object.menu_func)
+
+    for cls in reversed(properties.classes + operators.classes + ui.classes):
+        unregister_class(cls)
     
 if __name__ == "__main__":
     register()
