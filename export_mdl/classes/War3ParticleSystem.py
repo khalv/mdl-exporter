@@ -49,7 +49,7 @@ class War3ParticleSystem(War3Object):
         self.tail_length = 0
         self.time = 0.5
         self.priority_plane = 0
-        self.ribbon_material_id = 0
+        self.ribbon_material = 0
         self.ribbon_color = (1.0, 1.0, 1.0)
         self.texture_id = 0
         self.model_path = ""
@@ -116,7 +116,7 @@ class War3ParticleSystem(War3Object):
         self.tail_length = emitter.tail_length
         self.time = emitter.time
         self.priority_plane = emitter.priority_plane
-        self.ribbon_material_id = emitter.ribbon_material_id
+        self.ribbon_material = emitter.ribbon_material
         self.ribbon_color = emitter.ribbon_color
         self.model_path = emitter.model_path
         self.head_life_start = emitter.head_life_start

@@ -72,6 +72,7 @@ class WAR3_PT_particle_editor_panel(Panel):
             row.prop(psys, "texture_path", text="")
             
             layout.prop(psys, "filter_mode")
+            layout.prop(psys, "priority_plane")
             
             layout.separator()
             

@@ -91,7 +91,7 @@ class War3Model:
         if obj.parent_type == 'BONE': #TODO: Check if animated - otherwise, make it a helper
             return obj.parent_bone if obj.parent_bone != "" else None
             
-        if parent.type == 'EMPTY' and parent.name.startswith("Bone_"):
+        if parent.type == 'EMPTY' and (parent.name.startswith("Bone_") or parent.name.startswith("bone_") or parent.name.startswith("helper_")):
             return parent.name
             
         anim_loc = get_curves(parent, 'location', (1, 2, 3))
@@ -176,32 +176,41 @@ class War3Model:
                     psys.parent = parent
                     psys.visibility = visibility
                     self.register_global_sequence(psys.visibility)
-                    
-                    if is_animated:
-                        bone = War3Object(obj.name)
-                        bone.parent = parent
-                        bone.pivot = settings.global_matrix @ Vector(obj.location)
-                        bone.anim_loc = anim_loc
-                        bone.anim_rot = anim_rot
-                        bone.anim_scale = anim_scale
-                        self.register_global_sequence(bone.anim_loc)
-                        self.register_global_sequence(bone.anim_rot)
-                        self.register_global_sequence(bone.anim_scale)
                         
-                        if bone.anim_loc is not None:
-                            bone.anim_loc.transform_vec(settings.global_matrix)
-                            
-                        if bone.anim_rot is not None:
-                            bone.anim_rot.transform_rot(settings.global_matrix)
-                        
-                        bone.billboarded = billboarded
-                        bone.billboard_lock = billboard_lock
-                        self.objects['bone'].add(bone)
-                        psys.parent = bone.name
+                    # The following was commented out because scale animation on a emitter produced this weird issue where it 
+                    # would create a bone for the emitter that would have the same object id as the emitter. The emitter parent 
+                    # would be that id too. That scale animation is useless since it is integrated as the Width and Length 
+                    # animations.
+                    # Moreover a separate helper isn't needed when all the animation can be put on the emitter.
+                    # So when exporting an emitter translation or rotation animations are needed - uncomment the following 
+                    # and fix it.
+                    # January 29 2023
                     
-                    if psys.emitter.emitter_type == 'ParticleEmitter':
+                    # if is_animated:
+                        # bone = War3Object(obj.name)
+                        # bone.parent = parent
+                        # bone.pivot = settings.global_matrix @ Vector(obj.location)
+                        # bone.anim_loc = anim_loc
+                        # bone.anim_rot = anim_rot
+                        # bone.anim_scale = anim_scale
+                        # self.register_global_sequence(bone.anim_loc)
+                        # self.register_global_sequence(bone.anim_rot)
+                        # self.register_global_sequence(bone.anim_scale)
+                        # 
+                        # if bone.anim_loc is not None:
+                            # bone.anim_loc.transform_vec(settings.global_matrix)
+                            # 
+                        # if bone.anim_rot is not None:
+                            # bone.anim_rot.transform_rot(settings.global_matrix)
+                        # 
+                        # bone.billboarded = billboarded
+                        # bone.billboard_lock = billboard_lock
+                        # self.objects['bone'].add(bone)
+                        # psys.parent = bone.name
+                    
+                    if psys.emitter_type == 'ParticleEmitter':
                         self.objects['particle'].add(psys)
-                    elif psys.emitter.emitter_type == 'ParticleEmitter2':
+                    elif psys.emitter_type == 'ParticleEmitter2':
                         self.objects['particle2'].add(psys)
                     else:
                         # Add the material to the list, in case it's unused
@@ -395,7 +404,7 @@ class War3Model:
                     att.billboarded = billboarded
                     att.billboard_lock = billboard_lock
                     self.objects['attachment'].add(att)
-                elif obj.name.startswith("Bone_"):
+                elif obj.name.startswith("Bone_") or obj.name.startswith("bone_") or obj.name.startswith("helper_"):
                     # I would make this a War3Bone... but i realize that we don't know 
                     # whether it is actually a bone until we know if any vertices are skinned to it.
                     bone = War3Object(obj.name)
@@ -544,7 +553,7 @@ class War3Model:
                 matrix = settings.global_matrix @ obj.matrix_world
                 camera.target = camera.pivot + matrix.to_quaternion() @ Vector((0.0, 0.0, -1.0)) # Target is just a point in front of the camera
 
-                self.cameras.append(obj)
+                self.cameras.append(camera)
           
             
         self.geosets = list(geoset_map.values())
