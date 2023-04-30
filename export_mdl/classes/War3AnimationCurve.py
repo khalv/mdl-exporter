@@ -292,7 +292,48 @@ class War3AnimationCurve:
                     writer.write("\tOutTan %s" % (line % tuple(f2s(rnd(x)) for x in hr)))
            
         writer.end_scope()
+      
+    def write_mdl_one_channel(self, name, writer, model, index, base_value):
+        # This is used for outputting the particle emitter width/length animations.
+        # It's mostly a copy paste of 'write_mdl' and can be obviously "improved".
         
+        f2ms = 1000 / bpy.context.scene.render.fps
+    
+        writer.begin_scope(name, "%d" % len(self.keyframes))
+        if self.type != 'EventTrack':
+            writer.write(self.interpolation)
+        if self.global_sequence > 0:
+            writer.write("GlobalSeqId %d" % model.global_seqs.index(self.global_sequence))
+            
+        for frame in sorted(self.keyframes.keys()):
+            n = len(self.keyframes[frame])
+            line = "%s"
+            if self.type == 'EventTrack':
+                writer.write("%d" % (frame * f2ms))
+            else:
+                keyframe = self.keyframes[frame]
+                
+                if self.type == 'Rotation':
+                    keyframe = keyframe[1:] + keyframe[:1] # MDL quaternions must be on the form XYZW
+                
+                value = line % f2s(rnd(keyframe[index]*base_value))
+                writer.write("%d: %s" % (frame * f2ms, value))
+
+                    
+                if self.interpolation == 'Bezier':
+                    hl = self.handles_left[frame]
+                    hr = self.handles_right[frame]
+                    
+                    if self.type == 'Rotation':
+                        hl = hl[1:]+hl[:1]
+                        hr = hr[1:]+hr[:1]
+                
+                    writer.write("\tInTan %s" % (line % f2s(rnd(hl[index] * base_value))))
+                    writer.write("\tOutTan %s" % (line % f2s(rnd(hr[index] * base_value))))
+           
+        writer.end_scope()
+        
+
     def write_mdx(self, model, writer):
         pass
         

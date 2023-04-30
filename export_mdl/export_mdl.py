@@ -204,7 +204,7 @@ def save(operator, context, settings, filepath="", mdl_version=800):
                 uv_anim.rotation.write_mdl("Rotation", writer, model)
                 
             if uv_anim.scale is not None:
-                uv_anim.scaling.write_mdl("Scaling", writer, model)
+                uv_anim.scale.write_mdl("Scaling", writer, model)
                 
             writer.end_scope()
         writer.end_scope()
@@ -540,14 +540,14 @@ def save(operator, context, settings, filepath="", mdl_version=800):
         else:
             writer.write("static EmissionRate %s" % f2s(rnd(psys.emission_rate)))
             
-        # FIXME FIXME FIXME FIXME FIXME: Separate X and Y channels! New animation class won't handle this. 
-        if psys.scale_anim is not None and ('scale', 1) in psys.scale_anim.keys():
-            psys.scale_anim.write_mdl("Width", writer, model)
+        # @TODO: Verify if X/Y swapping is actually needed.
+        if psys.scale_anim is not None:
+            psys.scale_anim.write_mdl_one_channel("Width", writer, model, 1, psys.dimensions[1])
         else:
             writer.write("static Width %s" % f2s(rnd(psys.dimensions[1])))
             
-        if psys.scale_anim is not None and ('scale', 0) in psys.scale_anim.keys():
-            psys.scale_anim.write_mdl("Length", writer, model)
+        if psys.scale_anim is not None:
+            psys.scale_anim.write_mdl_one_channel("Length", writer, model, 0, psys.dimensions[0])
         else:
             writer.write("static Length %s" % f2s(rnd(psys.dimensions[0])))
             
@@ -576,7 +576,7 @@ def save(operator, context, settings, filepath="", mdl_version=800):
         writer.write("DecayUVAnim {%d, %d, %d}" % (psys.head_decay_start, psys.head_decay_end, psys.head_decay_repeat))
         writer.write("TailUVAnim {%d, %d, %d}" % (psys.tail_life_start, psys.tail_life_end, psys.tail_life_repeat))
         writer.write("TailDecayUVAnim {%d, %d, %d}" % (psys.tail_decay_start, psys.tail_decay_end, psys.tail_decay_repeat))
-        writer.write("TextureID %d" % model.textures[psys.texture_id])
+        writer.write("TextureID %d" % psys.texture_id)
         if psys.priority_plane != 0:
             writer.write("PriorityPlane %d" % psys.priority_plane)
         writer.end_scope()
