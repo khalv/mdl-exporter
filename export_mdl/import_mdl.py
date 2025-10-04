@@ -19,7 +19,7 @@ import os.path
 
 def parse_vector(str, as_int = False):
     values = str.rstrip('},').lstrip('{').split(',')
-    return tuple(map(lambda x: int(x) if as_int else float(x), values))
+    return tuple(map(lambda x: int(float(x)) if as_int else float(x), values))
 
 class MDLParser:
     def __init__(self, path):
