@@ -19,7 +19,7 @@
 bl_info = {
     "name": "MDL Importer/Exporter", 
     "author": "Kalle Halvarsson",
-    "blender": (2, 80, 0),
+    "blender": (4, 0, 0),
     "location": "File > Export > Warcraft MDL (.mdl)",
     "description": "Import or export Warcraft .MDL models",
     "category": "Import-Export"

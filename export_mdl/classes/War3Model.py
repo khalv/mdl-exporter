@@ -53,21 +53,11 @@ class War3Model:
         
     @staticmethod
     def prepare_mesh(obj, context, matrix):
-        mod = None
-        if obj.data.use_auto_smooth:
-            mod = obj.modifiers.new("EdgeSplitExport", 'EDGE_SPLIT')
-            mod.split_angle = obj.data.auto_smooth_angle
-        
         depsgraph = context.evaluated_depsgraph_get()
-        mesh =  bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph)
-        
-        if obj.data.use_auto_smooth:
-            obj.modifiers.remove(mod)
+        mesh = bpy.data.meshes.new_from_object(obj.evaluated_get(depsgraph), preserve_all_data_layers=True, depsgraph=depsgraph)
 
-        # Triangulate for web export
         bm = bmesh.new()
         bm.from_mesh(mesh)
-        # If an object has had a negative scale applied, normals will be inverted. This will fix that. 
         if any(s < 0 for s in obj.scale):
             bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         bmesh.ops.triangulate(bm, faces=bm.faces)
@@ -76,7 +66,6 @@ class War3Model:
         bm.free()
         del bm
 
-        mesh.calc_normals_split()
         mesh.calc_loop_triangles()
 
         return mesh
@@ -334,9 +323,9 @@ class War3Model:
                     for vert, loop in zip(tri.vertices, tri.loops):
                         co = mesh.vertices[vert].co
                         coord = (rnd(co.x), rnd(co.y), rnd(co.z))
-                        n = mesh.vertices[vert].normal if tri.use_smooth else tri.normal
+                        n = mesh.corner_normals[loop].vector
                         norm = (rnd(n.x), rnd(n.y), rnd(n.z))
-                        uv = mesh.uv_layers.active.data[loop].uv if len(mesh.uv_layers) else Vector((0.0, 0.0))
+                        uv = mesh.uv_layers.active.uv[loop].vector if len(mesh.uv_layers) else Vector((0.0, 0.0))
                         uv[1] = 1 - uv[1] # For some reason, uv Y coordinates appear flipped. This should fix that. 
                         tvert = (rnd(uv.x), rnd(uv.y))
                         groups = None
@@ -504,7 +493,7 @@ class War3Model:
                     
                     self.objects['bone'].add(bone)
                     
-            elif obj.type in ('LAMP', 'LIGHT'):
+            elif obj.type == 'LIGHT':
                 light = War3Light(obj.name)
                 light.object = obj
                 light.pivot = settings.global_matrix @ Vector(obj.location)
@@ -659,9 +648,11 @@ class War3Model:
             nodes = mat.node_tree.nodes
             links = mat.node_tree.links
 
-            nodes.remove(nodes.get('Principled BSDF'))
+            for n in list(nodes):
+                if n.type == 'BSDF_PRINCIPLED':
+                    nodes.remove(n)
 
-            output = nodes.get('Material Output')
+            output = next(n for n in nodes if n.type == 'OUTPUT_MATERIAL')
             output.location = Vector((0, 0))
 
             mix_node = nodes.new('ShaderNodeMixShader')
@@ -791,19 +782,38 @@ class War3Model:
 
                     image_name = os.path.basename(texture.image_path.replace('.blp', '.png'))
                     import_path = os.path.join(folder, image_name)
+                    blp_name = os.path.basename(texture.image_path)
+                    blp_path = os.path.join(folder, blp_name)
 
                     node = nodes.new('ShaderNodeTexImage')
                     node.name = image_name
 
                     if image_name in bpy.data.images:
                         node.image = bpy.data.images[image_name]
-                    else:
-                        print("Loading image: %s" % import_path)
-                        if os.path.exists(import_path):
-                            img = bpy.data.images.load(import_path)
+                    elif os.path.exists(import_path):
+                        node.image = bpy.data.images.load(import_path)
+                    elif os.path.exists(blp_path):
+                        from ..blp_reader import load_blp
+                        result = load_blp(blp_path)
+                        if result and result[0] == 'jpeg':
+                            img = bpy.data.images.load(result[1])
+                            img.name = image_name
+                            px = list(img.pixels)
+                            for i in range(0, len(px), 4):
+                                px[i], px[i+2] = px[i+2], px[i]
+                            img.pixels = px
+                            img.pack()
+                            node.image = img
+                        elif result:
+                            w, h, px = result
+                            img = bpy.data.images.new(image_name, w, h, alpha=True)
+                            img.pixels = px
+                            img.pack()
                             node.image = img
                         else:
-                            print("Image at path %s does not exist!" % import_path)
+                            print("Failed to decode BLP: %s" % blp_path)
+                    else:
+                        print("Image not found: %s" % import_path)
 
                 node.location = offset
 
@@ -857,16 +867,6 @@ class War3Model:
             last_index = len(material.layers) - 1
             last_node = create_join(last_index, last_index-1, Vector((x_offset - 400, 0)))
             links.new(last_node.outputs[0], input_socket)
-
-            if any(True for layer in material.layers if layer.filter_mode == 'None'):
-                mat.blend_method = 'OPAQUE'
-                mat.shadow_method = 'OPAQUE'
-            elif any(True for layer in material.layers if layer.filter_mode == 'Transparent'):
-                mat.blend_method = 'CLIP'
-                mat.shadow_method = 'CLIP'
-            else:
-                mat.blend_method = 'BLEND'
-                mat.shadow_method = 'NONE'
 
             if len([True for layer in material.layers if layer.filter_mode == 'None']) == 0:
                 if last_node.outputs.get('Alpha') is not None:
@@ -974,17 +974,13 @@ class War3Model:
 
             is_skinned = len(geoset.matrices) > 1
 
-            # Mesh will already have split nornals, rest should be smooth
-            for f in mesh.polygons:
-                f.use_smooth = True
-
             # UVs
             uvs = mesh.uv_layers.new(name='UV')
             for face in mesh.polygons:
                 for loop_index in range(face.loop_start, face.loop_start + face.loop_total):
-                    loop = mesh.loops[loop_index]
-                    uv = geoset.vertices[loop.vertex_index][2]
-                    uvs.data[loop_index].uv = (uv[0], 1 - uv[1]) # UV Y is flipped in MDL source
+                    vert_idx = mesh.loops[loop_index].vertex_index
+                    uv = geoset.vertices[vert_idx][2]
+                    uvs.uv[loop_index].vector = (uv[0], 1 - uv[1])
 
             # Normals
             mesh.normals_split_custom_set_from_vertices(normals)
@@ -1104,7 +1100,7 @@ class War3Model:
                 elif node_type == 'light':
                     bpy.ops.object.light_add(type='POINT', radius=1.0, align='WORLD', location=pivot)
                     obj = context.active_object
-                    light_data = obj.data.mdl_data
+                    light_data = obj.data.mdl_light
                     light_data.atten_start = node.atten_start
                     light_data.atten_end = node.atten_end
                     if node.color is not None:
@@ -1209,7 +1205,8 @@ class War3Model:
 
                 obj.location = pivot
 
-                context.collection.objects.link(obj)
+                if obj.name not in context.collection.objects:
+                    context.collection.objects.link(obj)
 
                 if node.anim_loc is not None:
                     node.anim_loc.to_fcurves(obj, obj, 'location', 'location', global_matrix)

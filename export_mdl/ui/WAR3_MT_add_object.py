@@ -7,7 +7,7 @@ from ..operators.WAR3_OT_add_anim_sequence import WAR3_OT_add_anim_sequence
 class WAR3_MT_add_object(Menu):
     bl_idname = "WAR3_MT_add_object"
     bl_label = "Add MDL object"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {'SEARCH_ON_KEY_PRESS'}
 
     def draw(self, context):
         layout = self.layout

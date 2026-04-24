@@ -30,7 +30,7 @@ class WAR3_PT_billboard_panel(Panel):
         if obj.type == 'EMPTY' and obj.name.lower().startswith("bone"):
             return True
             
-        if obj.type in ('LAMP', 'LIGHT'):
+        if obj.type == 'LIGHT':
             return True
             
         if obj.name.endswith(" Ref"):
