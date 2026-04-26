@@ -28,7 +28,7 @@ from ..utils import *
 
 class War3Model:
 
-    default_texture = "Textures\white.blp"
+    default_texture = r"Textures\white.blp"
     decimal_places = 5
 
     def __init__(self, context):
@@ -825,8 +825,8 @@ class War3Model:
                     if len(node.inputs): # No inputs on RGB node
                         links.new(node.inputs[0], mapping_node.outputs[0])
 
-                    if texture_anim.location is not None:
-                        texture_anim.location.to_fcurves(mapping_node.inputs["Location"], mat.node_tree, 'default_value', 'mapping_node.inputs["Location"]')
+                    if texture_anim.translation is not None:
+                        texture_anim.translation.to_fcurves(mapping_node.inputs["Location"], mat.node_tree, 'default_value', 'mapping_node.inputs["Location"]')
                     if texture_anim.rotation is not None: # TODO: Needs to convert from quaternion to euler!
                         texture_anim.rotation.to_fcurves(mapping_node.inputs["Rotation"], mat.node_tree, 'default_value', 'mapping_node.inputs["Rotation"]')
                     if texture_anim.scale is not None:
@@ -927,7 +927,7 @@ class War3Model:
 
         def animate_bone(node):
             pose_bone = armature_obj.pose.bones[node.name]
-            matrix = pose_bone.bone.matrix_local.inverted()
+            matrix = pose_bone.bone.matrix_local.inverted_safe()
             if node.anim_loc is not None:
                 matrix = matrix.to_3x3().to_4x4() @ global_matrix
                 node.anim_loc.to_fcurves(pose_bone, armature_obj, 'location', 'pose.bones["%s"].location' % node.name, matrix)
@@ -1093,8 +1093,8 @@ class War3Model:
                         if node.type == 'Sphere':
                             obj.scale = global_matrix.to_3x3() @ Vector((node.radius, node.radius, node.radius))
                         else:
-                            pmin = global_matrix @ Vector(obj.vertices[0])
-                            pmax = global_matrix @ Vector(obj.vertices[1])
+                            pmin = global_matrix @ Vector(node.vertices[0])
+                            pmax = global_matrix @ Vector(node.vertices[1])
                             obj.scale = (abs(pmax[0] - pmin[0]), abs(pmax[1] - pmin[1]), abs(pmax[2] - pmin[2]))
 
                 elif node_type == 'light':
@@ -1224,10 +1224,12 @@ class War3Model:
         context.view_layer.update()
         for node_type in self.objects:
             for node in self.objects[node_type]:
+                if node.object_id not in objects:
+                    continue
                 child = objects[node.object_id]
                 if child in bone_armature:
                     continue # Parenting of armature bones already handled - plus, the object will be a string
-                if node.parent_id is not None:
+                if node.parent_id is not None and node.parent_id in objects:
                     if objects[node.parent_id] in bone_armature:
                         bone_name = objects[node.parent_id]
                         armature = bone_armature[bone_name]
@@ -1237,6 +1239,8 @@ class War3Model:
                         child.matrix_parent_inverse = armature.data.bones[bone_name].matrix_local.inverted()
                     else:
                         parent = objects[node.parent_id]
+                        if parent == child:
+                            continue
                         child.parent_type = 'OBJECT'
                         child.parent = parent
                         child.matrix_parent_inverse = parent.matrix_world.inverted()

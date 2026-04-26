@@ -15,14 +15,14 @@ from ..classes.War3ExportSettings import War3ExportSettings
 
 @orientation_helper(axis_forward='-X', axis_up='Z')
 class WAR3_OT_export_mdl(Operator, ExportHelper):
-    """MDL Exporter"""
+    """MDL/MDX Exporter"""
     bl_idname = 'export.mdl_exporter'
-    bl_description = 'Warctaft 3 MDL Exporter'
-    bl_label = 'Export .MDL'
+    bl_description = 'Warcraft 3 MDL/MDX Exporter'
+    bl_label = 'Export .MDL/.MDX'
     filename_ext = ".mdl"
     
     filter_glob : StringProperty(
-            default="*.mdl", options={'HIDDEN'}
+            default="*.mdl;*.mdx", options={'HIDDEN'}
             )
     
     filepath : StringProperty(
@@ -58,7 +58,8 @@ class WAR3_OT_export_mdl(Operator, ExportHelper):
     
     def execute(self, context):                                   
         filepath = self.filepath
-        filepath = bpy.path.ensure_ext(filepath, self.filename_ext)
+        if not filepath.lower().endswith((".mdl", ".mdx")):
+            filepath = bpy.path.ensure_ext(filepath, self.filename_ext)
         
         settings = War3ExportSettings()
         settings.global_matrix = axis_conversion(to_forward=self.axis_forward,
@@ -69,8 +70,12 @@ class WAR3_OT_export_mdl(Operator, ExportHelper):
         settings.optimize_animation = self.optimize_animation
         settings.optimize_tolerance = self.optimize_tolerance
         
-        from .. import export_mdl
-        export_mdl.save(self, context, settings, filepath=filepath, mdl_version=800)
+        if filepath.lower().endswith(".mdx"):
+            from .. import export_mdx
+            export_mdx.save(self, context, settings, filepath=filepath, mdl_version=800)
+        else:
+            from .. import export_mdl
+            export_mdl.save(self, context, settings, filepath=filepath, mdl_version=800)
         
         return {'FINISHED'}
        

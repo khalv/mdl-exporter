@@ -8,14 +8,14 @@ from mathutils import Matrix
 from ..classes.War3ImportSettings import War3ImportSettings 
 
 class WAR3_OT_import_mdl(Operator, ImportHelper):
-    """MDL Importer"""
+    """MDL/MDX Importer"""
     bl_idname = 'import.mdl_importer'
-    bl_description = 'Warcraft 3 MDL Importer'
-    bl_label = 'Import .MDL'
+    bl_description = 'Warcraft 3 MDL/MDX Importer'
+    bl_label = 'Import .MDL/.MDX'
     filename_ext = '.mdl'
 
     filter_glob : StringProperty(
-        default="*.mdl", options={'HIDDEN'}
+        default="*.mdl;*.mdx", options={'HIDDEN'}
         )
     
     filepath : StringProperty(
@@ -32,7 +32,10 @@ class WAR3_OT_import_mdl(Operator, ImportHelper):
 
     def execute(self, context):
         filepath = self.filepath
-        filepath = bpy.path.ensure_ext(filepath, self.filename_ext)
+        lower_filepath = filepath.lower()
+        if not lower_filepath.endswith(".mdl"):
+            if not lower_filepath.endswith(".mdx"):
+                filepath = bpy.path.ensure_ext(filepath, self.filename_ext)
 
         settings = War3ImportSettings()
         settings.global_matrix = Matrix.Scale(self.global_scale, 4)
@@ -40,8 +43,12 @@ class WAR3_OT_import_mdl(Operator, ImportHelper):
                                  to_up='Z',
                                  ).to_4x4().inverted() @ Matrix.Scale(self.global_scale, 4)
 
-        from .. import import_mdl
-        import_mdl.load(self, context, settings, filepath=filepath)
+        if filepath.lower().endswith(".mdx"):
+            from .. import import_mdx
+            import_mdx.load(self, context, settings, filepath=filepath)
+        else:
+            from .. import import_mdl
+            import_mdl.load(self, context, settings, filepath=filepath)
 
         return {'FINISHED'}
 
