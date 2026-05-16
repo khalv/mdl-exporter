@@ -11,3 +11,9 @@ class War3Light(War3Object):
         self.color = (1, 1, 1)
         self.amb_color = (0, 0, 0)
         self.amb_intensity = 0
+        self.intensity_anim = None
+        self.atten_start_anim = None
+        self.atten_end_anim = None
+        self.color_anim = None
+        self.amb_color_anim = None
+        self.amb_intensity_anim = None

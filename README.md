@@ -1,5 +1,5 @@
 # mdl-importer/exporter
-Warcraft MDL exporter for Blender
+Warcraft MDL/MDX exporter for Blender
 By Kalle Halvarsson
 
 Now also supports importing!
@@ -9,7 +9,7 @@ Now also supports importing!
 * Add export_mdl folder to a zip or rar file. It should be one next to the "images" folder - not the one containing the full repository!
 * In Blender, go to User Preferences (CTRL+ALT+U) and select "Install Add-on From File". Select your zipped folder.
 * MDL Exporter should now show up in the Import/Export plugins list. Make sure it is enabled by ticking the box.
-* The option to export to .mdl will now appear in the export menu (you may need to restart Blender first).
+* The option to export to .mdl or .mdx will now appear in the export menu (you may need to restart Blender first).
 
 ## Instructions
 This plugin tries to approximate the functionality of the Wc3 Art Tools exporter for 3ds Max. The ambition has been to support multiple ways of achieving the same result, so that users can set up their scene in whatever way feels most intuitive. There are, however, some implementation details you might need to know before using this plugin.

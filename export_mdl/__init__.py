@@ -17,11 +17,11 @@
 # ##### END GPL LICENSE BLOCK #####
 
 bl_info = {
-    "name": "MDL Importer/Exporter", 
+    "name": "MDL/MDX Importer/Exporter", 
     "author": "Kalle Halvarsson",
-    "blender": (2, 80, 0),
-    "location": "File > Export > Warcraft MDL (.mdl)",
-    "description": "Import or export Warcraft .MDL models",
+    "blender": (4, 0, 0),
+    "location": "File > Import/Export > Warcraft MDL/MDX (.mdl/.mdx)",
+    "description": "Import or export Warcraft .MDL/.MDX models",
     "category": "Import-Export"
     } 
 
@@ -41,11 +41,11 @@ import shutil
         
 def export_menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
-    self.layout.operator(operators.WAR3_OT_export_mdl.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
+    self.layout.operator(operators.WAR3_OT_export_mdl.WAR3_OT_export_mdl.bl_idname, text="Warcraft MDL/MDX (.mdl/.mdx)")  
 
 def import_menu_func(self, context):
     self.layout.operator_context = 'INVOKE_DEFAULT'
-    self.layout.operator(operators.WAR3_OT_import_mdl.WAR3_OT_import_mdl.bl_idname, text="Warcraft MDL (.mdl)")  
+    self.layout.operator(operators.WAR3_OT_import_mdl.WAR3_OT_import_mdl.bl_idname, text="Warcraft MDL/MDX (.mdl/.mdx)")  
 
 def register():
     from bpy.utils import register_class
